@@ -1,0 +1,22 @@
+spring:
+  application:
+    name: bpmn-engine
+  config:
+    import: optional:file:.env[.properties]
+  threads:
+    virtual:
+      enabled: true
+
+# BPMN message/signal throw and catch via Kafka (opt-in)
+bpmn:
+  kafka:
+    enabled: ${BPMN_KAFKA_ENABLED:false}
+    topic: ${BPMN_KAFKA_TOPIC:bpmn-events}
+    consumer-group: ${BPMN_KAFKA_CONSUMER_GROUP:bpmn-engine}
+
+ai:
+  gemini:
+    api-key: ${GEMINI_API_KEY}
+    model: ${GEMINI_MODEL:gemini-3.1-pro-preview}
+    base-url: ${GEMINI_BASE_URL:https://generativelanguage.googleapis.com}
+    timeout: ${GEMINI_TIMEOUT:60s}

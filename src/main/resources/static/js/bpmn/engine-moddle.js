@@ -1,0 +1,36 @@
+export const ENGINE_MODDLE_DESCRIPTOR = {
+  name: 'Engine',
+  uri: 'https://bko.dev/schema/bpmn-engine/1.0',
+  prefix: 'engine',
+  xml: {
+    tagAlias: 'lowerCase',
+  },
+  types: [
+    {
+      name: 'TaskConfiguration',
+      superClass: ['Element'],
+      properties: [
+        { name: 'type', isAttr: true, type: 'String' },
+        { name: 'method', isAttr: true, type: 'String' },
+        { name: 'url', isAttr: true, type: 'String' },
+        { name: 'authenticationType', isAttr: true, type: 'String' },
+        { name: 'apiKeyLocation', isAttr: true, type: 'String' },
+        { name: 'apiKeyName', isAttr: true, type: 'String' },
+        { name: 'apiKeyValue', isAttr: true, type: 'String' },
+        { name: 'username', isAttr: true, type: 'String' },
+        { name: 'password', isAttr: true, type: 'String' },
+        { name: 'bearerToken', isAttr: true, type: 'String' },
+        { name: 'headers', isAttr: true, type: 'String' },
+        { name: 'queryParameters', isAttr: true, type: 'String' },
+        { name: 'body', isAttr: true, type: 'String' },
+        { name: 'resultVariable', isAttr: true, type: 'String' },
+        { name: 'timeoutSeconds', isAttr: true, type: 'Integer' },
+        { name: 'beanName', isAttr: true, type: 'String' },
+        { name: 'inputMapping', isAttr: true, type: 'String' },
+        { name: 'topic', isAttr: true, type: 'String' },
+        { name: 'messageMapping', isAttr: true, type: 'String' },
+        { name: 'keyMapping', isAttr: true, type: 'String' },
+      ],
+    },
+  ],
+};

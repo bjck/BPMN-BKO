@@ -1,0 +1,146 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<bpmn:definitions xmlns:bpmn="http://www.omg.org/spec/BPMN/20100524/MODEL"
+                  xmlns:engine="https://bko.dev/schema/bpmn-engine/1.0">
+  <bpmn:process id="Process_AllGateways" name="All Gateways E2E">
+    <bpmn:startEvent id="Start_1" name="Start">
+      <bpmn:outgoing>Flow_to_xor</bpmn:outgoing>
+    </bpmn:startEvent>
+    <bpmn:exclusiveGateway id="GW_xor" name="XOR" default="Flow_xor_default">
+      <bpmn:incoming>Flow_to_xor</bpmn:incoming>
+      <bpmn:outgoing>Flow_xor_yes</bpmn:outgoing>
+      <bpmn:outgoing>Flow_xor_no</bpmn:outgoing>
+      <bpmn:outgoing>Flow_xor_default</bpmn:outgoing>
+    </bpmn:exclusiveGateway>
+    <bpmn:serviceTask id="Task_xor_yes" name="XOR Yes" implementation="java">
+      <bpmn:incoming>Flow_xor_yes</bpmn:incoming>
+      <bpmn:outgoing>Flow_yes_to_merge</bpmn:outgoing>
+    </bpmn:serviceTask>
+    <bpmn:serviceTask id="Task_xor_no" name="XOR No" implementation="java">
+      <bpmn:incoming>Flow_xor_no</bpmn:incoming>
+      <bpmn:outgoing>Flow_no_to_merge</bpmn:outgoing>
+    </bpmn:serviceTask>
+    <bpmn:serviceTask id="Task_xor_default" name="XOR Default" implementation="java">
+      <bpmn:incoming>Flow_xor_default</bpmn:incoming>
+      <bpmn:outgoing>Flow_def_to_merge</bpmn:outgoing>
+    </bpmn:serviceTask>
+    <bpmn:serviceTask id="Task_merge" name="Merge" implementation="java">
+      <bpmn:incoming>Flow_yes_to_merge</bpmn:incoming>
+      <bpmn:incoming>Flow_no_to_merge</bpmn:incoming>
+      <bpmn:incoming>Flow_def_to_merge</bpmn:incoming>
+      <bpmn:outgoing>Flow_to_par_split</bpmn:outgoing>
+    </bpmn:serviceTask>
+    <bpmn:parallelGateway id="GW_parallel_split" name="Parallel Split">
+      <bpmn:incoming>Flow_to_par_split</bpmn:incoming>
+      <bpmn:outgoing>Flow_par_a</bpmn:outgoing>
+      <bpmn:outgoing>Flow_par_b</bpmn:outgoing>
+    </bpmn:parallelGateway>
+    <bpmn:serviceTask id="Task_par_a" name="Parallel A" implementation="java">
+      <bpmn:incoming>Flow_par_a</bpmn:incoming>
+      <bpmn:outgoing>Flow_a_to_join</bpmn:outgoing>
+    </bpmn:serviceTask>
+    <bpmn:serviceTask id="Task_par_b" name="Parallel B" implementation="java">
+      <bpmn:incoming>Flow_par_b</bpmn:incoming>
+      <bpmn:outgoing>Flow_b_to_join</bpmn:outgoing>
+    </bpmn:serviceTask>
+    <bpmn:parallelGateway id="GW_parallel_join" name="Parallel Join">
+      <bpmn:incoming>Flow_a_to_join</bpmn:incoming>
+      <bpmn:incoming>Flow_b_to_join</bpmn:incoming>
+      <bpmn:outgoing>Flow_to_inclusive</bpmn:outgoing>
+    </bpmn:parallelGateway>
+    <bpmn:inclusiveGateway id="GW_inclusive" name="Inclusive" default="Flow_inc_default">
+      <bpmn:incoming>Flow_to_inclusive</bpmn:incoming>
+      <bpmn:outgoing>Flow_inc_one</bpmn:outgoing>
+      <bpmn:outgoing>Flow_inc_two</bpmn:outgoing>
+      <bpmn:outgoing>Flow_inc_default</bpmn:outgoing>
+    </bpmn:inclusiveGateway>
+    <bpmn:serviceTask id="Task_inc_one" name="Inclusive One" implementation="java">
+      <bpmn:incoming>Flow_inc_one</bpmn:incoming>
+      <bpmn:outgoing>Flow_inc1_to_join</bpmn:outgoing>
+    </bpmn:serviceTask>
+    <bpmn:serviceTask id="Task_inc_two" name="Inclusive Two" implementation="java">
+      <bpmn:incoming>Flow_inc_two</bpmn:incoming>
+      <bpmn:outgoing>Flow_inc2_to_join</bpmn:outgoing>
+    </bpmn:serviceTask>
+    <bpmn:serviceTask id="Task_inc_default" name="Inclusive Default" implementation="java">
+      <bpmn:incoming>Flow_inc_default</bpmn:incoming>
+      <bpmn:outgoing>Flow_incdef_to_join</bpmn:outgoing>
+    </bpmn:serviceTask>
+    <bpmn:inclusiveGateway id="GW_inclusive_join" name="Inclusive Join">
+      <bpmn:incoming>Flow_inc1_to_join</bpmn:incoming>
+      <bpmn:incoming>Flow_inc2_to_join</bpmn:incoming>
+      <bpmn:incoming>Flow_incdef_to_join</bpmn:incoming>
+      <bpmn:outgoing>Flow_to_complex</bpmn:outgoing>
+    </bpmn:inclusiveGateway>
+    <bpmn:complexGateway id="GW_complex" name="Complex" default="Flow_complex_default"
+                         engine:activationExpression="${chosenFlow}"
+                         engine:activationLanguage="spel">
+      <bpmn:incoming>Flow_to_complex</bpmn:incoming>
+      <bpmn:outgoing>Flow_complex_1</bpmn:outgoing>
+      <bpmn:outgoing>Flow_complex_default</bpmn:outgoing>
+    </bpmn:complexGateway>
+    <bpmn:serviceTask id="Task_complex_1" name="Complex Branch" implementation="java">
+      <bpmn:incoming>Flow_complex_1</bpmn:incoming>
+      <bpmn:outgoing>Flow_c1_to_ev</bpmn:outgoing>
+    </bpmn:serviceTask>
+    <bpmn:serviceTask id="Task_complex_default" name="Complex Default" implementation="java">
+      <bpmn:incoming>Flow_complex_default</bpmn:incoming>
+      <bpmn:outgoing>Flow_cdef_to_ev</bpmn:outgoing>
+    </bpmn:serviceTask>
+    <bpmn:eventBasedGateway id="GW_event" name="Event-based" default="Flow_ev_default">
+      <bpmn:incoming>Flow_c1_to_ev</bpmn:incoming>
+      <bpmn:incoming>Flow_cdef_to_ev</bpmn:incoming>
+      <bpmn:outgoing>Flow_ev_ok</bpmn:outgoing>
+      <bpmn:outgoing>Flow_ev_default</bpmn:outgoing>
+    </bpmn:eventBasedGateway>
+    <bpmn:serviceTask id="Task_ev_ok" name="Event OK" implementation="java">
+      <bpmn:incoming>Flow_ev_ok</bpmn:incoming>
+      <bpmn:outgoing>Flow_evok_to_end</bpmn:outgoing>
+    </bpmn:serviceTask>
+    <bpmn:serviceTask id="Task_ev_default" name="Event Default" implementation="java">
+      <bpmn:incoming>Flow_ev_default</bpmn:incoming>
+      <bpmn:outgoing>Flow_evdef_to_end</bpmn:outgoing>
+    </bpmn:serviceTask>
+    <bpmn:endEvent id="End_1" name="End">
+      <bpmn:incoming>Flow_evok_to_end</bpmn:incoming>
+      <bpmn:incoming>Flow_evdef_to_end</bpmn:incoming>
+    </bpmn:endEvent>
+    <bpmn:sequenceFlow id="Flow_to_xor" sourceRef="Start_1" targetRef="GW_xor"/>
+    <bpmn:sequenceFlow id="Flow_xor_yes" sourceRef="GW_xor" targetRef="Task_xor_yes">
+      <bpmn:conditionExpression>${useXorYes == true}</bpmn:conditionExpression>
+    </bpmn:sequenceFlow>
+    <bpmn:sequenceFlow id="Flow_xor_no" sourceRef="GW_xor" targetRef="Task_xor_no">
+      <bpmn:conditionExpression>${useXorNo == true}</bpmn:conditionExpression>
+    </bpmn:sequenceFlow>
+    <bpmn:sequenceFlow id="Flow_xor_default" sourceRef="GW_xor" targetRef="Task_xor_default"/>
+    <bpmn:sequenceFlow id="Flow_yes_to_merge" sourceRef="Task_xor_yes" targetRef="Task_merge"/>
+    <bpmn:sequenceFlow id="Flow_no_to_merge" sourceRef="Task_xor_no" targetRef="Task_merge"/>
+    <bpmn:sequenceFlow id="Flow_def_to_merge" sourceRef="Task_xor_default" targetRef="Task_merge"/>
+    <bpmn:sequenceFlow id="Flow_to_par_split" sourceRef="Task_merge" targetRef="GW_parallel_split"/>
+    <bpmn:sequenceFlow id="Flow_par_a" sourceRef="GW_parallel_split" targetRef="Task_par_a"/>
+    <bpmn:sequenceFlow id="Flow_par_b" sourceRef="GW_parallel_split" targetRef="Task_par_b"/>
+    <bpmn:sequenceFlow id="Flow_a_to_join" sourceRef="Task_par_a" targetRef="GW_parallel_join"/>
+    <bpmn:sequenceFlow id="Flow_b_to_join" sourceRef="Task_par_b" targetRef="GW_parallel_join"/>
+    <bpmn:sequenceFlow id="Flow_to_inclusive" sourceRef="GW_parallel_join" targetRef="GW_inclusive"/>
+    <bpmn:sequenceFlow id="Flow_inc_one" sourceRef="GW_inclusive" targetRef="Task_inc_one">
+      <bpmn:conditionExpression>${takeIncOne == true}</bpmn:conditionExpression>
+    </bpmn:sequenceFlow>
+    <bpmn:sequenceFlow id="Flow_inc_two" sourceRef="GW_inclusive" targetRef="Task_inc_two">
+      <bpmn:conditionExpression>${takeIncTwo == true}</bpmn:conditionExpression>
+    </bpmn:sequenceFlow>
+    <bpmn:sequenceFlow id="Flow_inc_default" sourceRef="GW_inclusive" targetRef="Task_inc_default"/>
+    <bpmn:sequenceFlow id="Flow_inc1_to_join" sourceRef="Task_inc_one" targetRef="GW_inclusive_join"/>
+    <bpmn:sequenceFlow id="Flow_inc2_to_join" sourceRef="Task_inc_two" targetRef="GW_inclusive_join"/>
+    <bpmn:sequenceFlow id="Flow_incdef_to_join" sourceRef="Task_inc_default" targetRef="GW_inclusive_join"/>
+    <bpmn:sequenceFlow id="Flow_to_complex" sourceRef="GW_inclusive_join" targetRef="GW_complex"/>
+    <bpmn:sequenceFlow id="Flow_complex_1" sourceRef="GW_complex" targetRef="Task_complex_1"/>
+    <bpmn:sequenceFlow id="Flow_complex_default" sourceRef="GW_complex" targetRef="Task_complex_default"/>
+    <bpmn:sequenceFlow id="Flow_c1_to_ev" sourceRef="Task_complex_1" targetRef="GW_event"/>
+    <bpmn:sequenceFlow id="Flow_cdef_to_ev" sourceRef="Task_complex_default" targetRef="GW_event"/>
+    <bpmn:sequenceFlow id="Flow_ev_ok" sourceRef="GW_event" targetRef="Task_ev_ok">
+      <bpmn:conditionExpression>${useEvOk == true}</bpmn:conditionExpression>
+    </bpmn:sequenceFlow>
+    <bpmn:sequenceFlow id="Flow_ev_default" sourceRef="GW_event" targetRef="Task_ev_default"/>
+    <bpmn:sequenceFlow id="Flow_evok_to_end" sourceRef="Task_ev_ok" targetRef="End_1"/>
+    <bpmn:sequenceFlow id="Flow_evdef_to_end" sourceRef="Task_ev_default" targetRef="End_1"/>
+  </bpmn:process>
+</bpmn:definitions>

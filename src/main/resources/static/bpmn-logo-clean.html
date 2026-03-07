@@ -1,0 +1,385 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>BPMN Engine — Logo</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Sora:wght@300;400;600;700&display=swap" rel="stylesheet">
+<style>
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+  :root {
+    --black: #0c0f14;
+    --white: #ffffff;
+    --muted: #8a9ab0;
+    --accent: #1cc8b2;
+    --bg-light: #f5f6f8;
+    --bg-dark: #0c0f14;
+  }
+
+  body {
+    background: #f0f1f4;
+    font-family: 'Sora', sans-serif;
+    min-height: 100vh;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 80px;
+    padding: 60px 24px;
+  }
+
+  /* ─── LABEL ─────────────────────────────────────── */
+  .label {
+    font-size: 10px;
+    letter-spacing: 0.18em;
+    text-transform: uppercase;
+    color: #aab0bc;
+    font-weight: 400;
+    margin-bottom: 20px;
+    text-align: center;
+  }
+
+  /* ─── LOGO WRAPPER ───────────────────────────────── */
+  .logo {
+    display: inline-flex;
+    align-items: center;
+    gap: 14px;
+    text-decoration: none;
+  }
+
+  /* ─── THE MARK ───────────────────────────────────── */
+  /*
+    The B mark fuses BPMN + BKO:
+    - The letterform B is constructed from BPMN primitives:
+      a vertical sequence-flow line (spine) with two
+      task-boxes as the B's bumps, and a start/end event node.
+    - This single glyph IS the shared B.
+  */
+  .mark {
+    flex-shrink: 0;
+  }
+
+  /* ─── WORDMARK ───────────────────────────────────── */
+  .wordmark {
+    display: flex;
+    flex-direction: column;
+    gap: 1px;
+  }
+
+  .wm-primary {
+    font-size: 28px;
+    font-weight: 700;
+    letter-spacing: -0.02em;
+    color: var(--black);
+    line-height: 1;
+  }
+
+  .wm-sub {
+    font-size: 9.5px;
+    font-weight: 400;
+    letter-spacing: 0.22em;
+    color: var(--muted);
+    text-transform: uppercase;
+  }
+
+  /* ─── VARIANTS GRID ──────────────────────────────── */
+  .grid {
+    display: flex;
+    gap: 0;
+    flex-wrap: wrap;
+    justify-content: center;
+  }
+
+  .tile {
+    padding: 48px 56px;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 0;
+  }
+
+  .tile-light { background: #ffffff; }
+  .tile-mid   { background: #f0f1f4; }
+  .tile-dark  { background: var(--black); }
+
+  /* Dark tile overrides */
+  .tile-dark .wm-primary { color: var(--white); }
+  .tile-dark .wm-sub     { color: #4a5a70; }
+
+  /* ─── SIZE VARIANTS ──────────────────────────────── */
+  .logo-lg .mark    { }
+  .logo-md .mark    { transform: scale(0.68); transform-origin: left center; }
+  .logo-sm .mark    { transform: scale(0.48); transform-origin: left center; }
+
+  .logo-md .wm-primary { font-size: 20px; }
+  .logo-md .wm-sub     { font-size: 8px; }
+  .logo-md             { gap: 2px; }
+
+  .logo-sm .wm-primary { font-size: 15px; }
+  .logo-sm .wm-sub     { font-size: 7px; letter-spacing: 0.15em; }
+  .logo-sm             { gap: 0; }
+
+  /* ─── ICON MARK (square badge) ───────────────────── */
+  .icon-badge {
+    width: 52px;
+    height: 52px;
+    background: var(--black);
+    border-radius: 13px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+
+  .icon-badge-light {
+    width: 52px;
+    height: 52px;
+    background: var(--white);
+    border-radius: 13px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    box-shadow: 0 1px 3px rgba(0,0,0,0.08);
+  }
+
+  .row {
+    display: flex;
+    align-items: center;
+    gap: 20px;
+    flex-wrap: wrap;
+    justify-content: center;
+  }
+
+  hr {
+    border: none;
+    border-top: 1px solid #e0e2e8;
+    width: 100%;
+    max-width: 600px;
+  }
+</style>
+</head>
+<body>
+
+<!-- ══════════════════════════════════════════════
+     PRIMARY — LIGHT BACKGROUND
+══════════════════════════════════════════════ -->
+<div>
+  <p class="label">Primary — Light</p>
+
+  <a class="logo logo-lg" href="#">
+
+    <!-- THE MARK: B constructed from BPMN primitives -->
+    <svg class="mark" width="46" height="52" viewBox="0 0 46 52" fill="none" xmlns="http://www.w3.org/2000/svg">
+
+      <!--
+        CONCEPT:
+        The B letterform is built entirely from BPMN notation:
+          • Spine  = sequence flow (vertical line)
+          • Top bump = Service Task box (rounded rect)
+          • Bot bump = larger Task box (rounded rect, slightly wider = B proportions)
+          • Start event (filled circle) at top
+          • End event (double circle) at bottom
+          • Small connector dots where bumps meet spine
+        The shared B serves both BPMN and BKO.
+      -->
+
+      <!-- Spine (sequence flow / vertical stroke of B) -->
+      <rect x="5" y="6" width="5" height="40" rx="2.5" fill="#0c0f14"/>
+
+      <!-- Start event (filled circle at top of spine) -->
+      <circle cx="7.5" cy="6" r="3.5" fill="#0c0f14"/>
+
+      <!-- Upper TASK BOX (top bump of B) -->
+      <rect x="10" y="8" width="22" height="16" rx="4" fill="#0c0f14"/>
+
+      <!-- Upper bump inner highlight (task icon feel) -->
+      <rect x="14" y="13" width="10" height="2" rx="1" fill="white" opacity="0.25"/>
+
+      <!-- Connector line top bump → spine right side -->
+      <rect x="5" y="24" width="5" height="2" rx="1" fill="#0c0f14"/>
+
+      <!-- Lower TASK BOX (bottom bump of B — slightly wider for B proportion) -->
+      <rect x="10" y="27" width="28" height="18" rx="4" fill="#0c0f14"/>
+
+      <!-- Lower bump inner highlight -->
+      <rect x="14" y="35" width="14" height="2" rx="1" fill="white" opacity="0.25"/>
+
+      <!-- End event (double ring at bottom of spine) -->
+      <circle cx="7.5" cy="46" r="3.5" fill="#0c0f14"/>
+      <circle cx="7.5" cy="46" r="1.8" fill="white"/>
+
+      <!-- Accent dot: tiny teal node on upper task (gateway hint) -->
+      <circle cx="36" cy="16" r="2.5" fill="#1cc8b2"/>
+
+    </svg>
+
+    <!-- WORDMARK -->
+    <div class="wordmark">
+      <div class="wm-primary">BPMN</div>
+      <div class="wm-sub">Engine · by bko</div>
+    </div>
+
+  </a>
+</div>
+
+
+<!-- ══════════════════════════════════════════════
+     PRIMARY — DARK BACKGROUND
+══════════════════════════════════════════════ -->
+<div>
+  <p class="label">Primary — Dark</p>
+
+  <div style="background:#0c0f14; padding: 48px 56px; border-radius: 16px; display:inline-block;">
+    <a class="logo logo-lg" href="#">
+
+      <svg class="mark" width="46" height="52" viewBox="0 0 46 52" fill="none" xmlns="http://www.w3.org/2000/svg">
+        <rect x="5" y="6" width="5" height="40" rx="2.5" fill="white"/>
+        <circle cx="7.5" cy="6" r="3.5" fill="white"/>
+        <rect x="10" y="8" width="22" height="16" rx="4" fill="white"/>
+        <rect x="14" y="13" width="10" height="2" rx="1" fill="#0c0f14" opacity="0.35"/>
+        <rect x="5" y="24" width="5" height="2" rx="1" fill="white"/>
+        <rect x="10" y="27" width="28" height="18" rx="4" fill="white"/>
+        <rect x="14" y="35" width="14" height="2" rx="1" fill="#0c0f14" opacity="0.35"/>
+        <circle cx="7.5" cy="46" r="3.5" fill="white"/>
+        <circle cx="7.5" cy="46" r="1.8" fill="#0c0f14"/>
+        <circle cx="36" cy="16" r="2.5" fill="#1cc8b2"/>
+      </svg>
+
+      <div class="wordmark">
+        <div class="wm-primary" style="color:white;">BPMN</div>
+        <div class="wm-sub">Engine · by bko</div>
+      </div>
+
+    </a>
+  </div>
+</div>
+
+
+<!-- ══════════════════════════════════════════════
+     SIZE SCALE
+══════════════════════════════════════════════ -->
+<div>
+  <p class="label">Size Scale</p>
+  <div style="display:flex; flex-direction:column; gap:28px; align-items:flex-start; background:white; padding: 40px 48px; border-radius:16px;">
+
+    <!-- Large -->
+    <a class="logo logo-lg" href="#">
+      <svg width="46" height="52" viewBox="0 0 46 52" fill="none">
+        <rect x="5" y="6" width="5" height="40" rx="2.5" fill="#0c0f14"/>
+        <circle cx="7.5" cy="6" r="3.5" fill="#0c0f14"/>
+        <rect x="10" y="8" width="22" height="16" rx="4" fill="#0c0f14"/>
+        <rect x="14" y="13" width="10" height="2" rx="1" fill="white" opacity="0.25"/>
+        <rect x="5" y="24" width="5" height="2" rx="1" fill="#0c0f14"/>
+        <rect x="10" y="27" width="28" height="18" rx="4" fill="#0c0f14"/>
+        <rect x="14" y="35" width="14" height="2" rx="1" fill="white" opacity="0.25"/>
+        <circle cx="7.5" cy="46" r="3.5" fill="#0c0f14"/>
+        <circle cx="7.5" cy="46" r="1.8" fill="white"/>
+        <circle cx="36" cy="16" r="2.5" fill="#1cc8b2"/>
+      </svg>
+      <div class="wordmark">
+        <div class="wm-primary">BPMN</div>
+        <div class="wm-sub">Engine · by bko</div>
+      </div>
+    </a>
+
+    <!-- Medium -->
+    <a class="logo" href="#" style="gap:10px; align-items:center;">
+      <svg width="32" height="36" viewBox="0 0 46 52" fill="none">
+        <rect x="5" y="6" width="5" height="40" rx="2.5" fill="#0c0f14"/>
+        <circle cx="7.5" cy="6" r="3.5" fill="#0c0f14"/>
+        <rect x="10" y="8" width="22" height="16" rx="4" fill="#0c0f14"/>
+        <rect x="14" y="13" width="10" height="2" rx="1" fill="white" opacity="0.25"/>
+        <rect x="5" y="24" width="5" height="2" rx="1" fill="#0c0f14"/>
+        <rect x="10" y="27" width="28" height="18" rx="4" fill="#0c0f14"/>
+        <rect x="14" y="35" width="14" height="2" rx="1" fill="white" opacity="0.25"/>
+        <circle cx="7.5" cy="46" r="3.5" fill="#0c0f14"/>
+        <circle cx="7.5" cy="46" r="1.8" fill="white"/>
+        <circle cx="36" cy="16" r="2.5" fill="#1cc8b2"/>
+      </svg>
+      <div class="wordmark">
+        <div class="wm-primary" style="font-size:20px;">BPMN</div>
+        <div class="wm-sub" style="font-size:8px;">Engine · by bko</div>
+      </div>
+    </a>
+
+    <!-- Small -->
+    <a class="logo" href="#" style="gap:7px; align-items:center;">
+      <svg width="22" height="25" viewBox="0 0 46 52" fill="none">
+        <rect x="5" y="6" width="5" height="40" rx="2.5" fill="#0c0f14"/>
+        <circle cx="7.5" cy="6" r="3.5" fill="#0c0f14"/>
+        <rect x="10" y="8" width="22" height="16" rx="4" fill="#0c0f14"/>
+        <rect x="14" y="13" width="10" height="2" rx="1" fill="white" opacity="0.25"/>
+        <rect x="5" y="24" width="5" height="2" rx="1" fill="#0c0f14"/>
+        <rect x="10" y="27" width="28" height="18" rx="4" fill="#0c0f14"/>
+        <rect x="14" y="35" width="14" height="2" rx="1" fill="white" opacity="0.25"/>
+        <circle cx="7.5" cy="46" r="3.5" fill="#0c0f14"/>
+        <circle cx="7.5" cy="46" r="1.8" fill="white"/>
+        <circle cx="36" cy="16" r="2.5" fill="#1cc8b2"/>
+      </svg>
+      <div class="wordmark">
+        <div class="wm-primary" style="font-size:14px; letter-spacing:-0.01em;">BPMN</div>
+        <div class="wm-sub" style="font-size:7px;">Engine · by bko</div>
+      </div>
+    </a>
+
+  </div>
+</div>
+
+
+<!-- ══════════════════════════════════════════════
+     ICON / BADGE VARIANTS
+══════════════════════════════════════════════ -->
+<div>
+  <p class="label">Icon — Favicon / App Icon</p>
+  <div class="row">
+
+    <!-- Dark badge -->
+    <div class="icon-badge">
+      <svg width="28" height="32" viewBox="0 0 46 52" fill="none">
+        <rect x="5" y="6" width="5" height="40" rx="2.5" fill="white"/>
+        <circle cx="7.5" cy="6" r="3.5" fill="white"/>
+        <rect x="10" y="8" width="22" height="16" rx="4" fill="white"/>
+        <rect x="5" y="24" width="5" height="2" rx="1" fill="white"/>
+        <rect x="10" y="27" width="28" height="18" rx="4" fill="white"/>
+        <circle cx="7.5" cy="46" r="3.5" fill="white"/>
+        <circle cx="7.5" cy="46" r="1.8" fill="#0c0f14"/>
+        <circle cx="36" cy="16" r="2.5" fill="#1cc8b2"/>
+      </svg>
+    </div>
+
+    <!-- Light badge -->
+    <div class="icon-badge-light">
+      <svg width="28" height="32" viewBox="0 0 46 52" fill="none">
+        <rect x="5" y="6" width="5" height="40" rx="2.5" fill="#0c0f14"/>
+        <circle cx="7.5" cy="6" r="3.5" fill="#0c0f14"/>
+        <rect x="10" y="8" width="22" height="16" rx="4" fill="#0c0f14"/>
+        <rect x="14" y="13" width="10" height="2" rx="1" fill="white" opacity="0.25"/>
+        <rect x="5" y="24" width="5" height="2" rx="1" fill="#0c0f14"/>
+        <rect x="10" y="27" width="28" height="18" rx="4" fill="#0c0f14"/>
+        <rect x="14" y="35" width="14" height="2" rx="1" fill="white" opacity="0.25"/>
+        <circle cx="7.5" cy="46" r="3.5" fill="#0c0f14"/>
+        <circle cx="7.5" cy="46" r="1.8" fill="white"/>
+        <circle cx="36" cy="16" r="2.5" fill="#1cc8b2"/>
+      </svg>
+    </div>
+
+    <!-- Teal accent badge -->
+    <div style="width:52px;height:52px;background:#1cc8b2;border-radius:13px;display:flex;align-items:center;justify-content:center;">
+      <svg width="28" height="32" viewBox="0 0 46 52" fill="none">
+        <rect x="5" y="6" width="5" height="40" rx="2.5" fill="white"/>
+        <circle cx="7.5" cy="6" r="3.5" fill="white"/>
+        <rect x="10" y="8" width="22" height="16" rx="4" fill="white"/>
+        <rect x="5" y="24" width="5" height="2" rx="1" fill="white"/>
+        <rect x="10" y="27" width="28" height="18" rx="4" fill="white"/>
+        <circle cx="7.5" cy="46" r="3.5" fill="white"/>
+        <circle cx="7.5" cy="46" r="1.8" fill="#1cc8b2"/>
+        <circle cx="36" cy="16" r="2.5" fill="white" opacity="0.7"/>
+      </svg>
+    </div>
+
+  </div>
+</div>
+
+</body>
+</html>

@@ -1,0 +1,28 @@
+# PostgreSQL only - for local development when running the app from IDE
+# Usage: docker compose -f docker/docker-compose.dev.yml up -d
+# Then run the app with: spring.profiles.active=persistence
+
+version: '3.8'
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: bpmn-postgres
+    environment:
+      POSTGRES_DB: bpmn
+      POSTGRES_USER: bpmn
+      POSTGRES_PASSWORD: bpmn
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U bpmn -d bpmn"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+
+volumes:
+  postgres_data:
+    driver: local

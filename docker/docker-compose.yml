@@ -1,0 +1,40 @@
+version: '3.8'
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: bpmn-postgres
+    environment:
+      POSTGRES_DB: bpmn
+      POSTGRES_USER: bpmn
+      POSTGRES_PASSWORD: bpmn
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U bpmn -d bpmn"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+
+  bpmn-engine:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile
+    container_name: bpmn-engine
+    environment:
+      SPRING_PROFILES_ACTIVE: persistence
+      SPRING_DATASOURCE_URL: jdbc:postgresql://postgres:5432/bpmn
+      SPRING_DATASOURCE_USERNAME: bpmn
+      SPRING_DATASOURCE_PASSWORD: bpmn
+    ports:
+      - "8080:8080"
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+volumes:
+  postgres_data:
+    driver: local
