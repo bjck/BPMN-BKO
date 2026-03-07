@@ -29,7 +29,7 @@ public class ProcessEngineBenchmark {
     public void setup() throws Exception {
         BpmnParser parser = new BpmnParser();
         ApplicationEventPublisher noOpPublisher = event -> {};
-        engine = new ProcessEngine(parser, noOpPublisher, null, null, null, null, null);
+        engine = new ProcessEngine(parser, noOpPublisher, null, null, null, null, null, null);
 
         String bpmnXml = loadResource("fixtures/sequential_10_tasks.bpmn");
         benchmarkProcessId = engine.deployProcess(bpmnXml);

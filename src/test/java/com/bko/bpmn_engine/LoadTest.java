@@ -22,7 +22,7 @@ public class LoadTest {
     public static void main(String[] args) throws Exception {
         BpmnParser parser = new BpmnParser();
         ApplicationEventPublisher noOpPublisher = event -> {};
-        ProcessEngine engine = new ProcessEngine(parser, noOpPublisher, null, null, null, null, null);
+        ProcessEngine engine = new ProcessEngine(parser, noOpPublisher, null, null, null, null, null, null);
 
         Path fixturesDir = Path.of(LoadTest.class.getResource("/fixtures").toURI());
         String bpmnXml = Files.readString(fixturesDir.resolve("sequential_10_tasks.bpmn"), StandardCharsets.UTF_8);

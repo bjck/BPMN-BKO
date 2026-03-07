@@ -31,7 +31,7 @@ class ProcessEngineTest {
     @BeforeEach
     void setUp() throws Exception {
         parser = new BpmnParser();
-        engine = new ProcessEngine(parser, new NoOpEventPublisher(), null, null, null, null, null);
+        engine = new ProcessEngine(parser, new NoOpEventPublisher(), null, null, null, null, null, null);
         fixturesDir = Path.of(getClass().getResource("/fixtures").toURI());
     }
 
@@ -106,9 +106,9 @@ class ProcessEngineTest {
         EventCollector noCollector = new EventCollector(noBranchTasks);
         EventCollector defaultCollector = new EventCollector(defaultBranchTasks);
 
-        ProcessEngine yesEngine = new ProcessEngine(parser, yesCollector, null, null, null, null, null);
-        ProcessEngine noEngine = new ProcessEngine(parser, noCollector, null, null, null, null, null);
-        ProcessEngine defaultEngine = new ProcessEngine(parser, defaultCollector, null, null, null, null, null);
+        ProcessEngine yesEngine = new ProcessEngine(parser, yesCollector, null, null, null, null, null, null);
+        ProcessEngine noEngine = new ProcessEngine(parser, noCollector, null, null, null, null, null, null);
+        ProcessEngine defaultEngine = new ProcessEngine(parser, defaultCollector, null, null, null, null, null, null);
 
         String defId = yesEngine.deployProcess(xml);
         noEngine.deployProcess(xml);
@@ -139,7 +139,7 @@ class ProcessEngineTest {
 
         List<String> activatedTaskIds = new ArrayList<>();
         EventCollector collector = new EventCollector(activatedTaskIds);
-        ProcessEngine parallelEngine = new ProcessEngine(parser, collector, null, null, null, null, null);
+        ProcessEngine parallelEngine = new ProcessEngine(parser, collector, null, null, null, null, null, null);
 
         parallelEngine.deployProcess(xml);
         parallelEngine.registerWorker("java", vars -> Map.of());
@@ -244,7 +244,7 @@ class ProcessEngineTest {
                 """;
 
         List<String> taskIds = new ArrayList<>();
-        ProcessEngine feelEngine = new ProcessEngine(parser, new EventCollector(taskIds), null, null, null, null, null);
+        ProcessEngine feelEngine = new ProcessEngine(parser, new EventCollector(taskIds), null, null, null, null, null, null);
         String defId = feelEngine.deployProcess(xml);
         feelEngine.registerWorker("java", vars -> Map.of());
 
@@ -280,6 +280,7 @@ class ProcessEngineTest {
                             }
                         }
                 )),
+                null,
                 null,
                 null
         );
@@ -403,7 +404,7 @@ class ProcessEngineTest {
                 """;
         List<String> activated = new ArrayList<>();
         EventCollector collector = new EventCollector(activated);
-        ProcessEngine catchEngine = new ProcessEngine(parser, collector, null, null, null, null, null);
+        ProcessEngine catchEngine = new ProcessEngine(parser, collector, null, null, null, null, null, null);
         catchEngine.deployProcess(xml);
         catchEngine.registerWorker("java", vars -> {
             activated.add(Thread.currentThread().getName());

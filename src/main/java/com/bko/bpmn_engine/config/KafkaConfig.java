@@ -2,6 +2,7 @@ package com.bko.bpmn_engine.config;
 
 import com.bko.bpmn_engine.engine.KafkaTaskExecutor;
 import com.bko.bpmn_engine.engine.kafka.BpmnEventPayload;
+import com.bko.bpmn_engine.engine.kafka.CheckpointEventPayload;
 import org.apache.kafka.clients.consumer.ConsumerConfig;
 import org.apache.kafka.clients.producer.ProducerConfig;
 import org.apache.kafka.common.serialization.StringDeserializer;
@@ -31,6 +32,12 @@ public class KafkaConfig {
 
     @Value("${bpmn.kafka.consumer-group:bpmn-engine}")
     private String consumerGroup;
+
+    @Value("${bpmn.kafka.checkpoint-consumer-group:bpmn-engine-checkpoint-consumer}")
+    private String checkpointConsumerGroup;
+
+    @Value("${bpmn.kafka.checkpoint-consumer-auto-offset-reset:latest}")
+    private String checkpointConsumerAutoOffsetReset;
 
     @Bean
     public ProducerFactory<String, BpmnEventPayload> bpmnEventProducerFactory() {
@@ -84,6 +91,51 @@ public class KafkaConfig {
         ConcurrentKafkaListenerContainerFactory<String, BpmnEventPayload> factory =
                 new ConcurrentKafkaListenerContainerFactory<>();
         factory.setConsumerFactory(bpmnEventConsumerFactory());
+        return factory;
+    }
+
+    /** Checkpoint producer: only when checkpoint-via-Kafka is enabled. acks=all, fail-fast timeouts. */
+    @Bean
+    @ConditionalOnProperty(prefix = "bpmn.kafka", name = "checkpoint-enabled", havingValue = "true")
+    public ProducerFactory<String, CheckpointEventPayload> checkpointProducerFactory() {
+        Map<String, Object> props = new HashMap<>();
+        props.put(ProducerConfig.BOOTSTRAP_SERVERS_CONFIG, bootstrapServers);
+        props.put(ProducerConfig.KEY_SERIALIZER_CLASS_CONFIG, StringSerializer.class);
+        props.put(ProducerConfig.VALUE_SERIALIZER_CLASS_CONFIG, JsonSerializer.class);
+        props.put(ProducerConfig.ACKS_CONFIG, "all");
+        props.put(ProducerConfig.MAX_BLOCK_MS_CONFIG, 5000);
+        props.put(ProducerConfig.REQUEST_TIMEOUT_MS_CONFIG, 10000);
+        props.put(ProducerConfig.DELIVERY_TIMEOUT_MS_CONFIG, 15000);
+        return new DefaultKafkaProducerFactory<>(props);
+    }
+
+    @Bean(name = "checkpointKafkaTemplate")
+    @ConditionalOnProperty(prefix = "bpmn.kafka", name = "checkpoint-enabled", havingValue = "true")
+    public KafkaTemplate<String, CheckpointEventPayload> checkpointKafkaTemplate() {
+        return new KafkaTemplate<>(checkpointProducerFactory());
+    }
+
+    /** Consumer for checkpoint topic: separate group, deserializes CheckpointEventPayload. */
+    @Bean
+    @ConditionalOnProperty(prefix = "bpmn.kafka", name = "checkpoint-enabled", havingValue = "true")
+    public ConsumerFactory<String, CheckpointEventPayload> checkpointConsumerFactory() {
+        Map<String, Object> props = new HashMap<>();
+        props.put(ConsumerConfig.BOOTSTRAP_SERVERS_CONFIG, bootstrapServers);
+        props.put(ConsumerConfig.GROUP_ID_CONFIG, checkpointConsumerGroup);
+        props.put(ConsumerConfig.AUTO_OFFSET_RESET_CONFIG, checkpointConsumerAutoOffsetReset);
+        props.put(ConsumerConfig.KEY_DESERIALIZER_CLASS_CONFIG, StringDeserializer.class);
+        props.put(ConsumerConfig.VALUE_DESERIALIZER_CLASS_CONFIG, JsonDeserializer.class);
+        props.put(JsonDeserializer.TRUSTED_PACKAGES, "com.bko.bpmn_engine.*");
+        props.put(JsonDeserializer.VALUE_DEFAULT_TYPE, CheckpointEventPayload.class.getName());
+        return new DefaultKafkaConsumerFactory<>(props);
+    }
+
+    @Bean(name = "checkpointKafkaListenerContainerFactory")
+    @ConditionalOnProperty(prefix = "bpmn.kafka", name = "checkpoint-enabled", havingValue = "true")
+    public ConcurrentKafkaListenerContainerFactory<String, CheckpointEventPayload> checkpointKafkaListenerContainerFactory() {
+        ConcurrentKafkaListenerContainerFactory<String, CheckpointEventPayload> factory =
+                new ConcurrentKafkaListenerContainerFactory<>();
+        factory.setConsumerFactory(checkpointConsumerFactory());
         return factory;
     }
 }

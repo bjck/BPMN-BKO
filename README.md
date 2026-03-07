@@ -31,10 +31,23 @@ When the `persistence` profile is active, the engine persists process state at c
 |------------|------|
 | Instance created | Before execution starts |
 | UserTask reached | When process waits for human input |
+| Service task (chain) | After each service task in a sequential chain |
 | Instance completed | When process reaches End Event |
 | UserTask completed | After variables merged, before advancing |
 
 **Guarantee:** Synchronous writes ensure no data loss on crash. Persistence is off the hot path—sequential service chains run entirely in memory.
+
+### Checkpoint via Kafka (default when persistence + Kafka are on)
+
+When both the **persistence** profile and **Kafka** are enabled, **checkpoint-via-Kafka** is on by default: the engine publishes checkpoint events to a dedicated Kafka topic and does **not** call the database on the hot path. A separate consumer writes those events to the existing JPA storage. The database is **eventually consistent** with the engine (Kafka is the durable log).
+
+| Property | Default | Description |
+|----------|---------|-------------|
+| `bpmn.kafka.checkpoint-topic` | `bpmn-checkpoints` | Topic for checkpoint events (separate from BPMN message/signal topic). |
+| `bpmn.kafka.checkpoint-enabled` | `true` | When `true`, engine produces checkpoints to Kafka and does not call `ProcessInstanceStorage` at checkpoint time. Set to `false` to write checkpoints directly to the DB. |
+| `bpmn.kafka.checkpoint-consumer-group` | `bpmn-engine-checkpoint-consumer` | Consumer group for the checkpoint listener. |
+
+The engine uses a dedicated checkpoint producer (key = `instanceId`, value = JSON payload) and waits for Kafka ack before continuing. Recovery on startup still loads from the DB; the DB may be slightly behind the last engine state until the consumer has processed the topic. To use direct DB checkpoints instead, set `BPMN_KAFKA_CHECKPOINT_ENABLED=false`.
 
 ### Running with PostgreSQL and Kafka
 
@@ -232,10 +245,13 @@ Secrets and environment-specific settings are **not** committed. Create a `.env`
 | `GEMINI_MODEL` | Gemini model name | `gemini-3.1-pro-preview` |
 | `GEMINI_BASE_URL` | Gemini API base URL | `https://generativelanguage.googleapis.com` |
 | `GEMINI_TIMEOUT` | Request timeout | `60s` |
-| `BPMN_KAFKA_ENABLED` | Enable Kafka (BPMN events + Kafka service tasks) | `false` |
+| `BPMN_KAFKA_ENABLED` | Enable Kafka (BPMN events + Kafka service tasks) | `true` |
 | `SPRING_KAFKA_BOOTSTRAP_SERVERS` | Kafka broker(s); use when not default | `localhost:9092` |
 | `BPMN_KAFKA_TOPIC` | Kafka topic for BPMN message/signal events | `bpmn-events` |
 | `BPMN_KAFKA_CONSUMER_GROUP` | Consumer group for BPMN event listener | `bpmn-engine` |
+| `BPMN_KAFKA_CHECKPOINT_ENABLED` | When persistence + Kafka are on: produce checkpoints to Kafka (true) or write directly to DB (false) | `true` |
+| `BPMN_KAFKA_CHECKPOINT_TOPIC` | Topic for checkpoint events | `bpmn-checkpoints` |
+| `BPMN_KAFKA_CHECKPOINT_CONSUMER_GROUP` | Consumer group for the checkpoint-to-DB listener | `bpmn-engine-checkpoint-consumer` |
 
 Example `.env` (only set what you need):
 
@@ -246,7 +262,7 @@ GEMINI_API_KEY=your-gemini-api-key
 # SPRING_KAFKA_BOOTSTRAP_SERVERS=localhost:9092
 ```
 
-Without `GEMINI_API_KEY`, the AI chat in the UI will report that the provider is not configured; the rest of the engine runs normally. With Kafka disabled (default), Kafka service tasks and BPMN message/signal over Kafka are unavailable; the broker URL is only used when `BPMN_KAFKA_ENABLED=true`.
+Without `GEMINI_API_KEY`, the AI chat in the UI will report that the provider is not configured; the rest of the engine runs normally. With Kafka disabled (`BPMN_KAFKA_ENABLED=false`), Kafka service tasks, BPMN message/signal over Kafka, and checkpoint-via-Kafka are unavailable.
 
 ### Virtual Threads
 

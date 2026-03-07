@@ -53,6 +53,7 @@ public class ProcessEngine {
     private final Map<String, List<String>> processDefinitionIdsByMessageRef = new ConcurrentHashMap<>();
 
     private final BpmnEventPublisher bpmnEventPublisher;
+    private final CheckpointSink checkpointSink;
 
     @Autowired
     public ProcessEngine(BpmnParser parser, ApplicationEventPublisher eventPublisher,
@@ -60,7 +61,8 @@ public class ProcessEngine {
                          @Autowired(required = false) ProcessDefinitionStorage definitionStorage,
                          @Autowired(required = false) ServiceTaskLogicRegistry serviceTaskLogicRegistry,
                          @Autowired(required = false) BpmnEventPublisher bpmnEventPublisher,
-                         @Autowired(required = false) KafkaTaskExecutor kafkaTaskExecutor) {
+                         @Autowired(required = false) KafkaTaskExecutor kafkaTaskExecutor,
+                         @Autowired(required = false) CheckpointSink checkpointSink) {
         this.parser = parser;
         this.eventPublisher = eventPublisher;
         this.instanceStorage = instanceStorage;
@@ -68,6 +70,7 @@ public class ProcessEngine {
         this.serviceTaskLogicRegistry = serviceTaskLogicRegistry;
         this.bpmnEventPublisher = bpmnEventPublisher;
         this.kafkaTaskExecutor = kafkaTaskExecutor;
+        this.checkpointSink = checkpointSink;
     }
 
     private record MessageSubscription(UUID instanceId, String nodeId, String correlationKey) {}
@@ -440,6 +443,8 @@ public class ProcessEngine {
                 long durationMs = System.currentTimeMillis() - startMs;
                 recordTaskExecution(current.instanceId(), taskId, st.implementation(), startMs, durationMs);
                 eventPublisher.publishEvent(new TaskCompletedEvent(this, current.instanceId(), taskId, durationMs));
+                // Checkpoint after each task in the chain (currentNodeId = task just completed)
+                persistCheckpoint(current, "SERVICE_TASK_COMPLETED", taskId);
             }
         }
 
@@ -787,18 +792,48 @@ public class ProcessEngine {
     }
 
     private void persistCheckpoint(ProcessInstance instance, String eventType) {
+        persistCheckpoint(instance, eventType, null);
+    }
+
+    /**
+     * Persist a checkpoint via the configured sink (Kafka or JPA) or directly to storage.
+     *
+     * @param currentNodeIdOverride when non-null (e.g. after a task in a sequential chain), use this as the persisted currentNodeId
+     */
+    private void persistCheckpoint(ProcessInstance instance, String eventType, String currentNodeIdOverride) {
+        Instant eventCreatedAt = Instant.now();
+        List<ProcessInstanceStorage.TaskExecutionRecord> pending = pendingTaskExecutions.remove(instance.instanceId());
+        if (pending == null) pending = List.of();
+
+        String currentNodeId = currentNodeIdOverride != null ? currentNodeIdOverride
+                : (instance.state() instanceof com.bko.bpmn_engine.model.Active a ? a.currentNodeId() : null);
+
+        if (checkpointSink != null) {
+            checkpointSink.checkpoint(instance, eventType, currentNodeId, parallelJoinTokens, pending, eventCreatedAt);
+            return;
+        }
         if (instanceStorage == null) return;
-        instanceStorage.save(instance, parallelJoinTokens);
+        ProcessInstance toSave = instance;
+        if (currentNodeId != null && instance.state() instanceof com.bko.bpmn_engine.model.Active) {
+            toSave = new ProcessInstance(
+                    instance.instanceId(),
+                    instance.processDefinitionId(),
+                    instance.variables(),
+                    new com.bko.bpmn_engine.model.Active(instance.instanceId(), currentNodeId),
+                    instance.createdAt(),
+                    instance.completedAt()
+            );
+        }
+        instanceStorage.save(toSave, parallelJoinTokens);
         instanceStorage.saveEvent(
                 instance.instanceId(),
                 eventType,
-                instance.state() instanceof com.bko.bpmn_engine.model.Active a ? a.currentNodeId() : null,
+                currentNodeId,
                 Map.copyOf(instance.variables()),
                 parallelJoinTokensToPlain(instance.instanceId()),
-                Instant.now()
+                eventCreatedAt
         );
-        List<ProcessInstanceStorage.TaskExecutionRecord> pending = pendingTaskExecutions.remove(instance.instanceId());
-        if (pending != null && !pending.isEmpty()) {
+        if (!pending.isEmpty()) {
             instanceStorage.saveTaskExecutions(instance.instanceId(), pending);
         }
     }

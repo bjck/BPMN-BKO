@@ -12,14 +12,14 @@ import java.util.concurrent.atomic.AtomicInteger;
 /**
  * Converts ProcessState to/from persistence format.
  */
-final class StateSerializer {
+public final class StateSerializer {
 
     private static final ObjectMapper MAPPER = new ObjectMapper();
 
     private StateSerializer() {
     }
 
-    static String stateType(ProcessState state) {
+    public static String stateType(ProcessState state) {
         return switch (state) {
             case Created ignored -> "CREATED";
             case Active ignored -> "ACTIVE";
@@ -29,15 +29,15 @@ final class StateSerializer {
         };
     }
 
-    static String currentNodeId(ProcessState state) {
+    public static String currentNodeId(ProcessState state) {
         return state instanceof Active active ? active.currentNodeId() : null;
     }
 
-    static String errorMessage(ProcessState state) {
+    public static String errorMessage(ProcessState state) {
         return state instanceof Failed failed ? failed.errorMessage() : null;
     }
 
-    static ProcessState fromPersistence(String stateType, String currentNodeId, String errorMessage, UUID instanceId) {
+    public static ProcessState fromPersistence(String stateType, String currentNodeId, String errorMessage, UUID instanceId) {
         return switch (stateType) {
             case "CREATED" -> new Created(instanceId);
             case "ACTIVE" -> new Active(instanceId, currentNodeId != null ? currentNodeId : "");
@@ -48,7 +48,7 @@ final class StateSerializer {
         };
     }
 
-    static String parallelJoinTokensToJson(Map<UUID, Map<String, AtomicInteger>> tokens, UUID instanceId) {
+    public static String parallelJoinTokensToJson(Map<UUID, Map<String, AtomicInteger>> tokens, UUID instanceId) {
         if (tokens == null || tokens.isEmpty()) {
             return "{}";
         }
@@ -65,7 +65,7 @@ final class StateSerializer {
         }
     }
 
-    static Map<String, Integer> parallelJoinTokensFromJson(String json) {
+    public static Map<String, Integer> parallelJoinTokensFromJson(String json) {
         if (json == null || json.isBlank()) {
             return Map.of();
         }
@@ -77,7 +77,7 @@ final class StateSerializer {
     }
 
     /** Restore to Map<String, AtomicInteger> for a single instance. */
-    static Map<String, AtomicInteger> toAtomicMap(Map<String, Integer> plain) {
+    public static Map<String, AtomicInteger> toAtomicMap(Map<String, Integer> plain) {
         if (plain == null || plain.isEmpty()) {
             return new HashMap<>();
         }

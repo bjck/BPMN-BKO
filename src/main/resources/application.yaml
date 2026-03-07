@@ -16,6 +16,10 @@ bpmn:
     enabled: ${BPMN_KAFKA_ENABLED:true}
     topic: ${BPMN_KAFKA_TOPIC:bpmn-events}
     consumer-group: ${BPMN_KAFKA_CONSUMER_GROUP:bpmn-engine}
+    # Checkpoint-via-Kafka: engine publishes checkpoints to a separate topic; a consumer writes to DB (eventually consistent). Requires persistence profile and bpmn.kafka.enabled.
+    checkpoint-topic: ${BPMN_KAFKA_CHECKPOINT_TOPIC:bpmn-checkpoints}
+    checkpoint-enabled: ${BPMN_KAFKA_CHECKPOINT_ENABLED:true}
+    checkpoint-consumer-group: ${BPMN_KAFKA_CHECKPOINT_CONSUMER_GROUP:bpmn-engine-checkpoint-consumer}
 
 ai:
   gemini:

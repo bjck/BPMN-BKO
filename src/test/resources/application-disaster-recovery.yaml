@@ -1,0 +1,10 @@
+# Profile for disaster-recovery integration test: Kafka + checkpoint consumer.
+# spring.kafka.bootstrap-servers is set by @EmbeddedKafka(bootstrapServersProperty = "spring.kafka.bootstrap-servers")
+bpmn:
+  kafka:
+    enabled: true
+    checkpoint-enabled: true
+    checkpoint-topic: bpmn-checkpoints
+    checkpoint-consumer-group: bpmn-engine-checkpoint-consumer-test
+    # Read from start of topic so test message is not missed when consumer joins after send
+    checkpoint-consumer-auto-offset-reset: earliest
