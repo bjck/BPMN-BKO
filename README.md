@@ -275,12 +275,24 @@ The default configuration registers a no-op worker for `"java"` in `BpmnEngineCo
 
 ### Supported Elements
 
-- `startEvent`, `endEvent`
-- `serviceTask` (with `implementation` attribute)
-- `userTask` (with optional `camunda:assignee`)
-- `exclusiveGateway` (with `default` flow and `conditionExpression` on sequence flows)
-- `parallelGateway` (fork and join)
-- `sequenceFlow` (with optional `conditionExpression`)
+| Element | Notes |
+|--------|--------|
+| **Events** | |
+| `startEvent` | Optional `engine:messageRef` (message start), `engine:timerDefinition` (timer start). One per process. |
+| `endEvent` | Optional `engine:messageRef`, `engine:errorCode`. |
+| `intermediateCatchEvent` | Optional `engine:messageRef` (message catch), `engine:timerDefinition` (timer). Trigger via API by node id or messageRef. |
+| `intermediateThrowEvent` | Optional `engine:messageRef`, `engine:signalRef`. Publishes to in-memory event bus; with Kafka enabled, to Kafka. |
+| **Tasks** | |
+| `serviceTask` | `implementation` attribute (e.g. `java`). Extension: REST, bean, or Kafka task via `engine:taskConfiguration`. |
+| `userTask` | Optional `camunda:assignee`. Blocks until `complete-task` API call. |
+| **Gateways** | |
+| `exclusiveGateway` | XOR. Optional `default` flow. Outgoing flows may have `conditionExpression` (SpEL/FEEL). |
+| `parallelGateway` | AND fork/join. No conditions. |
+| `inclusiveGateway` | OR. Optional `default` flow. Conditions on outgoing flows. |
+| `eventBasedGateway` | Optional `default` flow. Followed by event-based branches. |
+| `complexGateway` | Optional `default` flow; `engine:activationExpression` and `engine:activationLanguage` (e.g. FEEL). |
+| **Connections** | |
+| `sequenceFlow` | Optional `conditionExpression` (SpEL or FEEL) and `name`. |
 
 ### Condition Expressions
 
