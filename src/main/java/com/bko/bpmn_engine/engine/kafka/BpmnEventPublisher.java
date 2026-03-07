@@ -2,6 +2,9 @@ package com.bko.bpmn_engine.engine.kafka;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.beans.factory.annotation.Qualifier;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnBean;
 import org.springframework.kafka.core.KafkaTemplate;
 import org.springframework.kafka.support.SendResult;
@@ -24,11 +27,9 @@ public class BpmnEventPublisher {
     private final KafkaTemplate<String, BpmnEventPayload> kafkaTemplate;
     private final String topic;
 
-    public BpmnEventPublisher(KafkaTemplate<String, BpmnEventPayload> kafkaTemplate) {
-        this(kafkaTemplate, DEFAULT_TOPIC);
-    }
-
-    public BpmnEventPublisher(KafkaTemplate<String, BpmnEventPayload> kafkaTemplate, String topic) {
+    @Autowired
+    public BpmnEventPublisher(@Qualifier("bpmnEventKafkaTemplate") KafkaTemplate<String, BpmnEventPayload> kafkaTemplate,
+                              @Value("${bpmn.kafka.events-topic:bpmn-events}") String topic) {
         this.kafkaTemplate = kafkaTemplate;
         this.topic = topic != null && !topic.isBlank() ? topic : DEFAULT_TOPIC;
     }

@@ -2,6 +2,8 @@
 
 A high-performance BPMN 2.0 process execution engine built with Spring Boot 4 and Java 21. The engine parses BPMN XML at deploy time, compiles processes to an internal model, and executes flow nodes synchronously on virtual threads—targeting **100 completed process instances per second**, each with 10 sequential service tasks.
 
+**Repository:** [github.com/bjck/BPMN-BKO](https://github.com/bjck/BPMN-BKO)
+
 ## Overview
 
 This engine implements a subset of BPMN 2.0 for process orchestration:
@@ -34,18 +36,21 @@ When the `persistence` profile is active, the engine persists process state at c
 
 **Guarantee:** Synchronous writes ensure no data loss on crash. Persistence is off the hot path—sequential service chains run entirely in memory.
 
-### Running with PostgreSQL
+### Running with PostgreSQL and Kafka
 
-**Docker Compose (full stack):**
+**Docker Compose (full stack: DB + Kafka + Kafka UI + app):**
 ```bash
 docker compose -f docker/docker-compose.yml up -d
-# App: http://localhost:8080, PostgreSQL: localhost:5432
+# App: http://localhost:8080 | PostgreSQL: localhost:5432 | Kafka: localhost:9092 | Kafka UI: http://localhost:8091
 ```
+The app runs with `persistence` and Kafka enabled (`BPMN_KAFKA_ENABLED=true`).
 
-**Local development (DB only, run app from IDE):**
+**Local development (DB + Kafka + Kafka UI; run app from IDE):**
 ```bash
 docker compose -f docker/docker-compose.dev.yml up -d
-# Then run the app with: spring.profiles.active=persistence
+# PostgreSQL: localhost:5432 | Kafka: localhost:9092 | Kafka UI: http://localhost:8091
+# Run the app with: spring.profiles.active=persistence
+# Optional: BPMN_KAFKA_ENABLED=true to enable BPMN message/signal events and Kafka service tasks
 ```
 
 ### Inspection API
@@ -170,6 +175,9 @@ src/
 | `POST` | `/v1/processes` | Deploy BPMN XML; returns `processDefinitionId` |
 | `GET`  | `/v1/processes` | List deployed process definition IDs |
 | `POST` | `/v1/process-instances` | Create instance; body: `{ processDefinitionId, variables? }` |
+| `POST` | `/v1/process-instances/message-start` | Start instance by message (message start event); body: `{ processDefinitionId, messageRef, correlationKey?, variables? }` |
+| `POST` | `/v1/process-instances/{id}/trigger-catch` | Trigger intermediate catch event by node id; body: `{ nodeId, variables? }` |
+| `POST` | `/v1/bpmn-events/trigger-catch` | Trigger catch event by messageRef; body: `{ messageRef, correlationKey?, variables? }` |
 | `GET`  | `/v1/process-instances/{id}` | Get instance (active or completed) |
 | `POST` | `/v1/process-instances/{id}/complete-task/{taskId}` | Complete user task; body: `{ variables? }` |
 | `DELETE` | `/v1/process-instances/{id}` | Cancel running instance |
@@ -179,13 +187,24 @@ src/
 
 ---
 
-## BPMN Viewer (Frontend)
+## BPMN Viewer and Editor (Frontend)
+
+### BPMN Viewer
 
 The web UI includes a BPMN viewer: select a process instance and click **View BPMN** to see the diagram with the current state (current node highlighted, completed nodes in green). Click diagram elements to see variables at that point. BPMN files must include **Diagram Interchange (bpmndi)** for the viewer to render; the samples under `src/main/resources/static/samples/` include bpmndi.
 
+### BPMN Editor
+
+The **Editor** tab provides a full BPMN modeler (bpmn.io) for designing diagrams:
+
+- **Palette and context pad** — Create and connect elements (start/end events, tasks, gateways) from the left palette or from the context pad on a selected element.
+- **Properties panel** — When you select an element, the right-hand panel shows ID, name, and type-specific options. For **gateways**, a **Gateway type** dropdown lets you switch between Exclusive (XOR), Parallel (AND), Inclusive (OR), Event-based, and Complex without redrawing; the element is replaced in place and connections are preserved.
+- **Element movement** — Shapes can be dragged to reposition; a custom rules module ensures moves are allowed and not reverted (no snap-back).
+- **Deploy** — Use **Deploy process** to push the current diagram to the engine; **Copy XML** copies the BPMN 2.0 XML to the clipboard.
+
 ### Frontend E2E Tests
 
-E2E tests verify the BPMN visualization using Playwright. **Start the app first**, then run:
+E2E tests verify the BPMN visualization and process execution using Playwright. **Start the app first**, then run:
 
 ```bash
 npm install
@@ -193,11 +212,41 @@ npx playwright install chromium
 npm run test:e2e
 ```
 
-Optional: `BASE_URL=http://localhost:8080 npm run test:e2e` (default is `http://localhost:8080`).
+- **`e2e/bpmn-viewer.spec.js`** — Viewer displays diagram for a selected instance (deploy counting process, create instance, open instances page).
+- **`e2e/spa.spec.js`** — SPA navigation and AI chat with mocked API (no backend required).
+- **`e2e/bpmn-diagrams.spec.js`** — Full BPMN execution against live backend: minimal process, user task (complete-task), exclusive and parallel gateways, **message start event**, **intermediate catch event** (trigger by nodeId or messageRef), **intermediate throw event**, and **Kafka service task** (topic, messageMapping, keyMapping, resultVariable). Requires backend; Kafka test is skipped if Kafka is not enabled.
+
+Optional: `BASE_URL=http://localhost:8080 npm run test:e2e` (default is `http://localhost:8080`). For the Kafka service task test, run with Kafka (e.g. `docker compose -f docker/docker-compose.dev.yml up -d`) and `BPMN_KAFKA_ENABLED=true`.
 
 ---
 
 ## Configuration
+
+### Environment variables (`.env`)
+
+Secrets and environment-specific settings are **not** committed. Create a `.env` file in the project root (the file is gitignored). The app loads it via `spring.config.import: optional:file:.env[.properties]`.
+
+| Variable | Description | Default |
+|----------|-------------|---------|
+| `GEMINI_API_KEY` | Google Gemini API key for AI chat in the web UI | *(required for AI)* |
+| `GEMINI_MODEL` | Gemini model name | `gemini-3.1-pro-preview` |
+| `GEMINI_BASE_URL` | Gemini API base URL | `https://generativelanguage.googleapis.com` |
+| `GEMINI_TIMEOUT` | Request timeout | `60s` |
+| `BPMN_KAFKA_ENABLED` | Enable Kafka (BPMN events + Kafka service tasks) | `false` |
+| `SPRING_KAFKA_BOOTSTRAP_SERVERS` | Kafka broker(s); use when not default | `localhost:9092` |
+| `BPMN_KAFKA_TOPIC` | Kafka topic for BPMN message/signal events | `bpmn-events` |
+| `BPMN_KAFKA_CONSUMER_GROUP` | Consumer group for BPMN event listener | `bpmn-engine` |
+
+Example `.env` (only set what you need):
+
+```properties
+GEMINI_API_KEY=your-gemini-api-key
+# Optional: enable Kafka (e.g. with docker compose -f docker/docker-compose.dev.yml up -d)
+# BPMN_KAFKA_ENABLED=true
+# SPRING_KAFKA_BOOTSTRAP_SERVERS=localhost:9092
+```
+
+Without `GEMINI_API_KEY`, the AI chat in the UI will report that the provider is not configured; the rest of the engine runs normally. With Kafka disabled (default), Kafka service tasks and BPMN message/signal over Kafka are unavailable; the broker URL is only used when `BPMN_KAFKA_ENABLED=true`.
 
 ### Virtual Threads
 
@@ -289,6 +338,11 @@ Listeners can subscribe via `@EventListener` for metrics, logging, or integratio
 
 ## Building and Running
 
+**Quick start:**
+
+1. Clone the repo and create a `.env` in the project root if you use AI chat (see [Environment variables](#environment-variables-env)).
+2. Build and run:
+
 ```bash
 # Build
 mvn clean package
@@ -300,7 +354,7 @@ java -jar target/bpmn-engine-0.0.1-SNAPSHOT.jar
 mvn spring-boot:run
 ```
 
-The application starts on port 8080 (default). Use the REST API to deploy processes and create instances.
+The application starts on port 8080 (default). Use the REST API to deploy processes and create instances. Start from the project root so the optional `.env` file is found.
 
 ---
 

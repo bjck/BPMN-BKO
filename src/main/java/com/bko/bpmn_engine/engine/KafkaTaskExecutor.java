@@ -4,8 +4,12 @@ import com.bko.bpmn_engine.model.KafkaTaskConfiguration;
 import com.bko.bpmn_engine.model.ServiceTask;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.springframework.kafka.core.KafkaTemplate;
+import org.springframework.kafka.support.SendResult;
 
 import java.util.Map;
+import java.util.concurrent.ExecutionException;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.TimeoutException;
 
 /**
  * Executes a Kafka service task: maps process variables to a message (via messageMapping expression),
@@ -57,12 +61,19 @@ public final class KafkaTaskExecutor {
             }
         }
 
-        if (key != null) {
-            kafkaTemplate.send(topic, key, body);
-        } else {
-            kafkaTemplate.send(topic, body);
+        try {
+            SendResult<String, String> result = key != null
+                    ? kafkaTemplate.send(topic, key, body).get(10, TimeUnit.SECONDS)
+                    : kafkaTemplate.send(topic, body).get(10, TimeUnit.SECONDS);
+            return Map.of("sent", true, "topic", topic, "partition", result.getRecordMetadata().partition(), "offset", result.getRecordMetadata().offset());
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            throw new IllegalStateException("Kafka send interrupted for task " + task.id(), e);
+        } catch (ExecutionException e) {
+            Throwable cause = e.getCause() != null ? e.getCause() : e;
+            throw new IllegalStateException("Kafka send failed for task " + task.id() + ": " + cause.getMessage(), cause);
+        } catch (TimeoutException e) {
+            throw new IllegalStateException("Kafka send timed out for task " + task.id() + " (topic: " + topic + "). Check broker is reachable.", e);
         }
-
-        return Map.of("sent", true, "topic", topic);
     }
 }

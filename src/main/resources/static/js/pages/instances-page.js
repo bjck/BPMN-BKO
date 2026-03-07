@@ -11,6 +11,10 @@ export function createInstancesPage({ showToast }) {
   let selectedInstance = null;
   let selectedHistory = { events: [], taskExecutions: [] };
 
+  const PAGE_SIZE = 10;
+  let currentPage = 1;
+  let allInstances = [];
+
   function setSelectedRow(instanceId) {
     root?.querySelectorAll('#instances-list .list-item').forEach((row) => {
       row.classList.toggle('selected', row.dataset.id === instanceId);
@@ -19,6 +23,96 @@ export function createInstancesPage({ showToast }) {
 
   function setViewerMessage(message) {
     viewerApp?.setIdleState(message);
+  }
+
+  function renderPagination() {
+    const container = root?.querySelector('#instances-pagination');
+    if (!container) {
+      return;
+    }
+
+    if (allInstances.length === 0) {
+      container.innerHTML = '';
+      container.classList.add('hidden');
+      return;
+    }
+
+    const totalPages = Math.max(1, Math.ceil(allInstances.length / PAGE_SIZE));
+    const start = (currentPage - 1) * PAGE_SIZE + 1;
+    const end = Math.min(currentPage * PAGE_SIZE, allInstances.length);
+
+    container.classList.remove('hidden');
+    container.innerHTML = `
+      <span class="pagination-summary">${start}–${end} of ${allInstances.length}</span>
+      <div class="pagination-controls">
+        <button type="button" class="btn btn-secondary pagination-prev" ${currentPage <= 1 ? 'disabled' : ''} aria-label="Previous page">Prev</button>
+        <span class="pagination-page" aria-live="polite">Page ${currentPage} of ${totalPages}</span>
+        <button type="button" class="btn btn-secondary pagination-next" ${currentPage >= totalPages ? 'disabled' : ''} aria-label="Next page">Next</button>
+      </div>
+    `;
+
+    container.querySelector('.pagination-prev')?.addEventListener('click', () => {
+      if (currentPage > 1) {
+        currentPage -= 1;
+        renderCurrentPage();
+      }
+    });
+    container.querySelector('.pagination-next')?.addEventListener('click', () => {
+      if (currentPage < totalPages) {
+        currentPage += 1;
+        renderCurrentPage();
+      }
+    });
+  }
+
+  function renderCurrentPage() {
+    const list = root?.querySelector('#instances-list');
+    if (!list) {
+      return;
+    }
+
+    const totalPages = Math.max(1, Math.ceil(allInstances.length / PAGE_SIZE));
+    if (currentPage > totalPages) {
+      currentPage = totalPages;
+    }
+
+    const start = (currentPage - 1) * PAGE_SIZE;
+    const pageInstances = allInstances.slice(start, start + PAGE_SIZE);
+
+    list.innerHTML = pageInstances.length
+      ? pageInstances.map((instance) => {
+          const varsPreview = instance.variables && Object.keys(instance.variables).length > 0
+            ? Object.entries(instance.variables).map(([key, value]) => `${key}=${JSON.stringify(value)}`).join(', ')
+            : '';
+
+          return `
+            <div class="list-item" data-id="${escapeHtml(instance.instanceId)}" role="button" tabindex="0">
+              <div>
+                <span class="id">${escapeHtml(instance.instanceId)}</span>
+                <div>${escapeHtml(instance.processDefinitionId)}${instance.currentNodeId ? ` @ ${escapeHtml(instance.currentNodeId)}` : ''}</div>
+                ${varsPreview ? `<div class="vars-preview">${escapeHtml(varsPreview)}</div>` : ''}
+              </div>
+              <span class="state ${escapeHtml(instance.state)}">${escapeHtml(instance.state)}</span>
+            </div>
+          `;
+        }).join('')
+      : '<span class="text-muted">No instances</span>';
+
+    list.querySelectorAll('.list-item').forEach((row) => {
+      row.addEventListener('click', () => selectInstance(row.dataset.id));
+      row.addEventListener('keydown', (event) => {
+        if (event.key === 'Enter' || event.key === ' ') {
+          event.preventDefault();
+          selectInstance(row.dataset.id);
+        }
+      });
+    });
+
+    if (selectedInstanceId && list.querySelector(`.list-item[data-id="${CSS.escape(selectedInstanceId)}"]`)) {
+      setSelectedRow(selectedInstanceId);
+    }
+
+    renderPagination();
   }
 
   async function loadInstancesList() {
@@ -35,38 +129,8 @@ export function createInstancesPage({ showToast }) {
         return;
       }
 
-      list.innerHTML = instances.length
-        ? instances.map((instance) => {
-            const varsPreview = instance.variables && Object.keys(instance.variables).length > 0
-              ? Object.entries(instance.variables).map(([key, value]) => `${key}=${JSON.stringify(value)}`).join(', ')
-              : '';
-
-            return `
-              <div class="list-item" data-id="${escapeHtml(instance.instanceId)}" role="button" tabindex="0">
-                <div>
-                  <span class="id">${escapeHtml(instance.instanceId)}</span>
-                  <div>${escapeHtml(instance.processDefinitionId)}${instance.currentNodeId ? ` @ ${escapeHtml(instance.currentNodeId)}` : ''}</div>
-                  ${varsPreview ? `<div class="vars-preview">${escapeHtml(varsPreview)}</div>` : ''}
-                </div>
-                <span class="state ${escapeHtml(instance.state)}">${escapeHtml(instance.state)}</span>
-              </div>
-            `;
-          }).join('')
-        : '<span class="text-muted">No instances</span>';
-
-      list.querySelectorAll('.list-item').forEach((row) => {
-        row.addEventListener('click', () => selectInstance(row.dataset.id));
-        row.addEventListener('keydown', (event) => {
-          if (event.key === 'Enter' || event.key === ' ') {
-            event.preventDefault();
-            selectInstance(row.dataset.id);
-          }
-        });
-      });
-
-      if (selectedInstanceId && list.querySelector(`.list-item[data-id="${CSS.escape(selectedInstanceId)}"]`)) {
-        setSelectedRow(selectedInstanceId);
-      }
+      allInstances = instances || [];
+      renderCurrentPage();
     } catch (error) {
       if (!destroyed) {
         list.innerHTML = `<span class="error">${escapeHtml(error.message)}</span>`;
@@ -82,6 +146,7 @@ export function createInstancesPage({ showToast }) {
     const userTask = root.querySelector('#instance-user-task');
     const historySection = root.querySelector('#instance-history');
     const cancelButton = root.querySelector('#cancel-instance-btn');
+    const restartButton = root.querySelector('#restart-instance-btn');
 
     placeholder.classList.add('hidden');
     info.classList.remove('hidden');
@@ -89,6 +154,8 @@ export function createInstancesPage({ showToast }) {
     userTask.classList.add('hidden');
     historySection.classList.remove('hidden');
     cancelButton.classList.toggle('hidden', instance.state !== 'Active');
+    const isFailed = String(instance.state || '').toLowerCase() === 'failed';
+    restartButton?.classList.toggle('hidden', !isFailed);
 
     info.innerHTML = `
       <p><span class="label">ID:</span> ${escapeHtml(instance.instanceId)}</p>
@@ -231,6 +298,25 @@ export function createInstancesPage({ showToast }) {
     }
   }
 
+  async function restartSelectedInstance() {
+    if (!selectedInstanceId) {
+      return;
+    }
+
+    if (!window.confirm('Restart this instance from the step it failed on?')) {
+      return;
+    }
+
+    try {
+      await fetchJson(`${API}/process-instances/${selectedInstanceId}/restart`, { method: 'POST' });
+      showToast('Instance restarted', 'success');
+      await loadInstancesList();
+      await selectInstance(selectedInstanceId);
+    } catch (error) {
+      showToast(error.message || 'Restart failed', 'error');
+    }
+  }
+
   async function cancelSelectedInstance() {
     if (!selectedInstanceId) {
       return;
@@ -255,7 +341,8 @@ export function createInstancesPage({ showToast }) {
       root.querySelector('#instance-variables-section').classList.add('hidden');
       root.querySelector('#instance-user-task').classList.add('hidden');
       root.querySelector('#instance-history').innerHTML = '';
-      root.querySelector('#cancel-instance-btn').classList.add('hidden');
+      root.querySelector('#cancel-instance-btn')?.classList.add('hidden');
+      root.querySelector('#restart-instance-btn')?.classList.add('hidden');
       setViewerMessage('Select an instance to view its BPMN diagram.');
       await loadInstancesList();
     } catch (error) {
@@ -288,6 +375,7 @@ export function createInstancesPage({ showToast }) {
               <p class="text-muted">Select an instance to inspect its read-only BPMN viewer and runtime data.</p>
             </div>
             <div id="instances-list" class="list instances-list"></div>
+            <div id="instances-pagination" class="instances-pagination hidden" aria-label="Instances pagination"></div>
           </aside>
           <div class="instances-main">
             <div class="instances-diagram-card card">
@@ -314,6 +402,7 @@ export function createInstancesPage({ showToast }) {
               <div id="instance-history" class="history-section hidden"></div>
               <div class="instance-actions">
                 <button id="refresh-instance-btn" class="btn btn-secondary">Refresh</button>
+                <button id="restart-instance-btn" class="btn btn-primary hidden">Restart from failed step</button>
                 <button id="cancel-instance-btn" class="btn btn-danger hidden">Cancel Instance</button>
               </div>
             </div>
@@ -338,6 +427,7 @@ export function createInstancesPage({ showToast }) {
         }
       });
 
+      root.querySelector('#restart-instance-btn')?.addEventListener('click', restartSelectedInstance);
       root.querySelector('#cancel-instance-btn')?.addEventListener('click', cancelSelectedInstance);
 
       loadInstancesList();

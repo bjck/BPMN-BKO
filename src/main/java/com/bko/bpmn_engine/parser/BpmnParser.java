@@ -534,6 +534,132 @@ public class BpmnParser {
         return sb.toString();
     }
 
+    /**
+     * Serializes a ProcessDefinition to BPMN 2.0 XML including diagram interchange (BPMNDiagram with
+     * BPMNShape and BPMNEdge) so viewers can render shapes and sequence flow arrows.
+     */
+    public String serializeWithDiagram(ProcessDefinition definition) {
+        StringBuilder sb = new StringBuilder();
+        sb.append("<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n");
+        sb.append("<bpmn:definitions xmlns:bpmn=\"http://www.omg.org/spec/BPMN/20100524/MODEL\" ");
+        sb.append("xmlns:camunda=\"http://camunda.org/schema/1.0/bpmn\" ");
+        sb.append("xmlns:engine=\"").append(ENGINE_NS).append("\" ");
+        sb.append("xmlns:bpmndi=\"http://www.omg.org/spec/BPMN/20100524/DI\" ");
+        sb.append("xmlns:dc=\"http://www.omg.org/spec/DD/20100524/DC\" xmlns:di=\"http://www.omg.org/spec/DD/20100524/DI\">\n");
+        sb.append("  <bpmn:process id=\"").append(escape(definition.id())).append("\" ");
+        sb.append("name=\"").append(escape(definition.name())).append("\">\n");
+
+        for (FlowNode node : definition.nodes().values()) {
+            serializeNode(sb, node, definition.sequenceFlows());
+        }
+
+        for (SequenceFlow flow : definition.sequenceFlows().values()) {
+            serializeSequenceFlow(sb, flow);
+        }
+
+        sb.append("  </bpmn:process>\n");
+
+        // Diagram interchange: simple horizontal layout so arrows (BPMNEdge) are visible in viewers
+        List<String> nodeOrder = topologicalOrder(definition);
+        Map<String, Bounds> boundsMap = new LinkedHashMap<>();
+        int x = 152;
+        int yBase = 82;
+        for (String nodeId : nodeOrder) {
+            FlowNode node = definition.nodes().get(nodeId);
+            if (node == null) continue;
+            int w = widthFor(node);
+            int h = heightFor(node);
+            int y = yBase - (h - 36) / 2;
+            boundsMap.put(nodeId, new Bounds(x, y, w, h));
+            x += w + 50;
+        }
+
+        sb.append("  <bpmndi:BPMNDiagram id=\"BPMNDiagram_1\">\n");
+        sb.append("    <bpmndi:BPMNPlane id=\"BPMNPlane_1\" bpmnElement=\"").append(escape(definition.id())).append("\">\n");
+
+        for (String nodeId : nodeOrder) {
+            FlowNode node = definition.nodes().get(nodeId);
+            Bounds b = boundsMap.get(nodeId);
+            if (node != null && b != null) {
+                sb.append("      <bpmndi:BPMNShape id=\"Shape_").append(escape(nodeId)).append("\" bpmnElement=\"").append(escape(nodeId)).append("\">");
+                sb.append("<dc:Bounds x=\"").append(b.x).append("\" y=\"").append(b.y).append("\" width=\"").append(b.w).append("\" height=\"").append(b.h).append("\"/></bpmndi:BPMNShape>\n");
+            }
+        }
+
+        for (SequenceFlow flow : definition.sequenceFlows().values()) {
+            Bounds src = boundsMap.get(flow.sourceRef());
+            Bounds tgt = boundsMap.get(flow.targetRef());
+            if (src != null && tgt != null) {
+                int sx2 = src.x + src.w;
+                int sy = src.y + src.h / 2;
+                int tx = tgt.x;
+                int ty = tgt.y + tgt.h / 2;
+                sb.append("      <bpmndi:BPMNEdge id=\"Edge_").append(escape(flow.id())).append("\" bpmnElement=\"").append(escape(flow.id())).append("\">");
+                sb.append("<di:waypoint x=\"").append(sx2).append("\" y=\"").append(sy).append("\"/>");
+                sb.append("<di:waypoint x=\"").append(tx).append("\" y=\"").append(ty).append("\"/></bpmndi:BPMNEdge>\n");
+            }
+        }
+
+        sb.append("    </bpmndi:BPMNPlane>\n");
+        sb.append("  </bpmndi:BPMNDiagram>\n");
+        sb.append("</bpmn:definitions>");
+        return sb.toString();
+    }
+
+    private static List<String> topologicalOrder(ProcessDefinition definition) {
+        List<String> order = new ArrayList<>();
+        Set<String> visited = new HashSet<>();
+        Queue<String> queue = new ArrayDeque<>();
+        queue.add(definition.startNodeId());
+        while (!queue.isEmpty()) {
+            String n = queue.poll();
+            if (n == null || !visited.add(n)) continue;
+            order.add(n);
+            List<String> out = definition.sequenceFlows().values().stream()
+                    .filter(f -> f.sourceRef().equals(n))
+                    .map(SequenceFlow::targetRef)
+                    .distinct()
+                    .toList();
+            queue.addAll(out);
+        }
+        for (String nodeId : definition.nodes().keySet()) {
+            if (!visited.contains(nodeId)) order.add(nodeId);
+        }
+        return order;
+    }
+
+    private static int widthFor(FlowNode node) {
+        return switch (node) {
+            case StartEvent s -> 36;
+            case EndEvent e -> 36;
+            case IntermediateCatchEvent i1 -> 36;
+            case IntermediateThrowEvent i2 -> 36;
+            case ExclusiveGateway g1 -> 50;
+            case ParallelGateway g2 -> 50;
+            case InclusiveGateway g3 -> 50;
+            case ComplexGateway g4 -> 50;
+            case EventBasedGateway g5 -> 50;
+            default -> 100;
+        };
+    }
+
+    private static int heightFor(FlowNode node) {
+        return switch (node) {
+            case StartEvent s -> 36;
+            case EndEvent e -> 36;
+            case IntermediateCatchEvent i1 -> 36;
+            case IntermediateThrowEvent i2 -> 36;
+            case ExclusiveGateway g1 -> 50;
+            case ParallelGateway g2 -> 50;
+            case InclusiveGateway g3 -> 50;
+            case ComplexGateway g4 -> 50;
+            case EventBasedGateway g5 -> 50;
+            default -> 80;
+        };
+    }
+
+    private record Bounds(int x, int y, int w, int h) {}
+
     private void serializeNode(StringBuilder sb, FlowNode node, Map<String, SequenceFlow> sequenceFlows) {
         String id = escape(node.id());
         String name = escape(node.name());

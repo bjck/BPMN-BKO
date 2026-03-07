@@ -97,15 +97,25 @@ public class ProcessEngine {
 
     /**
      * Returns BPMN 2.0 XML for a deployed process, or null if not found.
-     * Checks in-memory cache first, then definition storage (e.g. after recovery).
+     * If the stored XML has no diagram edges (BPMNEdge), returns a version with generated
+     * diagram interchange so the viewer can render sequence flow arrows.
      */
     public String getBpmnXml(String processDefinitionId) {
         String xml = bpmnXmlByDefinitionId.get(processDefinitionId);
-        if (xml != null) return xml;
-        if (definitionStorage != null) {
-            return definitionStorage.findBpmnXmlById(processDefinitionId);
+        if (xml == null && definitionStorage != null) {
+            xml = definitionStorage.findBpmnXmlById(processDefinitionId);
         }
-        return null;
+        if (xml == null) return null;
+        if (hasDiagramEdges(xml)) return xml;
+        CompiledProcess compiled = deployedProcesses.get(processDefinitionId);
+        if (compiled != null) {
+            return parser.serializeWithDiagram(compiled.definition());
+        }
+        return xml;
+    }
+
+    private static boolean hasDiagramEdges(String bpmnXml) {
+        return bpmnXml.contains("BPMNEdge") || bpmnXml.contains("bpmnEdge");
     }
 
     /**
@@ -420,7 +430,12 @@ public class ProcessEngine {
             if (node instanceof ServiceTask st) {
                 long startMs = System.currentTimeMillis();
                 eventPublisher.publishEvent(new TaskActivatedEvent(this, current.instanceId(), taskId, st.implementation()));
-                applyTaskResult(current, st, executeTask(st, current));
+                try {
+                    applyTaskResult(current, st, executeTask(st, current));
+                } catch (Exception e) {
+                    failInstance(current, e);
+                    throw e;
+                }
 
                 long durationMs = System.currentTimeMillis() - startMs;
                 recordTaskExecution(current.instanceId(), taskId, st.implementation(), startMs, durationMs);
@@ -515,6 +530,39 @@ public class ProcessEngine {
     }
 
     /**
+     * Restart a failed process instance from the node it failed on.
+     *
+     * @param instanceId process instance id (must be in Failed state)
+     * @return the process instance after restart (may have advanced or failed again)
+     * @throws ProcessNotFoundException if instance not found or process definition not deployed
+     * @throws IllegalStateTransitionException if instance is not in Failed state or failed-at node is missing
+     */
+    public ProcessInstance restartFailedInstance(UUID instanceId) {
+        ProcessInstance instance = getInstance(instanceId);
+        if (instance == null) {
+            throw new ProcessNotFoundException("Instance not found: " + instanceId);
+        }
+        if (!(instance.state() instanceof Failed)) {
+            throw new IllegalStateTransitionException("Instance is not failed; cannot restart: " + instanceId);
+        }
+        Object nodeIdObj = instance.variables().get("failedAtNodeId");
+        if (!(nodeIdObj instanceof String nodeId) || nodeId.isBlank()) {
+            throw new IllegalStateTransitionException("Cannot restart: failed-at node id is missing for instance: " + instanceId);
+        }
+        CompiledProcess compiled = deployedProcesses.get(instance.processDefinitionId());
+        if (compiled == null) {
+            throw new ProcessNotFoundException("Process definition not deployed: " + instance.processDefinitionId());
+        }
+        completedInstances.remove(instanceId);
+        instance.variables().remove("errorMessage");
+        instance.variables().remove("failedAtNodeId");
+        ProcessInstance restarted = transitionTo(instance, new Active(instance.instanceId(), nodeId));
+        persistCheckpoint(restarted, "RESTARTED");
+        executeFrom(restarted, nodeId);
+        return activeInstances.getOrDefault(instanceId, completedInstances.getOrDefault(instanceId, restarted));
+    }
+
+    /**
      * Returns the set of deployed process definition ids.
      */
     public Set<String> getDeployedProcessIds() {
@@ -604,7 +652,12 @@ public class ProcessEngine {
 
         long startMs = System.currentTimeMillis();
         eventPublisher.publishEvent(new TaskActivatedEvent(this, current.instanceId(), st.id(), st.implementation()));
-        applyTaskResult(current, st, executeTask(st, current));
+        try {
+            applyTaskResult(current, st, executeTask(st, current));
+        } catch (Exception e) {
+            failInstance(current, e);
+            throw e;
+        }
 
         long durationMs = System.currentTimeMillis() - startMs;
         recordTaskExecution(current.instanceId(), st.id(), st.implementation(), startMs, durationMs);
@@ -615,6 +668,22 @@ public class ProcessEngine {
             persistCheckpoint(current, "SERVICE_TASK_COMPLETED");
             advanceAndExecute(current, next.getFirst(), compiled);
         }
+    }
+
+    private void failInstance(ProcessInstance current, Exception e) {
+        String message = e.getMessage() != null ? e.getMessage() : e.getClass().getSimpleName();
+        current.variables().put("errorMessage", message);
+        if (current.state() instanceof Active a) {
+            current.variables().put("failedAtNodeId", a.currentNodeId());
+        }
+        ProcessInstance failed = transitionTo(current, new Failed(current.instanceId(), message));
+        activeInstances.remove(current.instanceId());
+        completedInstances.put(current.instanceId(), failed);
+        parallelJoinTokens.remove(current.instanceId());
+        pendingTaskExecutions.remove(current.instanceId());
+        messageSubscriptions.values().forEach(list -> list.removeIf(s -> s.instanceId().equals(current.instanceId())));
+        persistCheckpoint(failed, "FAILED");
+        eventPublisher.publishEvent(new ProcessInstanceFailedEvent(this, current.instanceId(), message));
     }
 
     private List<String> findChainContaining(CompiledProcess compiled, String nodeId) {

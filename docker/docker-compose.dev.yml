@@ -1,6 +1,8 @@
-# PostgreSQL only - for local development when running the app from IDE
+# PostgreSQL + Kafka + Kafka UI for local development (run the app from IDE)
 # Usage: docker compose -f docker/docker-compose.dev.yml up -d
 # Then run the app with: spring.profiles.active=persistence
+# Optional: set BPMN_KAFKA_ENABLED=true (e.g. in .env) to enable Kafka tasks and BPMN events.
+# App connects to Kafka at localhost:9092. Kafka UI: http://localhost:8091
 
 version: '3.8'
 
@@ -23,6 +25,43 @@ services:
       retries: 5
       start_period: 10s
 
+  kafka:
+    image: apache/kafka:3.9.0
+    container_name: bpmn-kafka
+    ports:
+      - "9092:9092"
+      - "9094:9094"
+    environment:
+      KAFKA_NODE_ID: 1
+      KAFKA_PROCESS_ROLES: broker,controller
+      # PLAINTEXT=host (localhost:9092), INTERNAL=containers (kafka:9094), CONTROLLER=KRaft (9093)
+      KAFKA_LISTENERS: PLAINTEXT://:9092,INTERNAL://:9094,CONTROLLER://:9093
+      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://localhost:9092,INTERNAL://kafka:9094
+      KAFKA_CONTROLLER_LISTENER_NAMES: CONTROLLER
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: CONTROLLER:PLAINTEXT,PLAINTEXT:PLAINTEXT,INTERNAL:PLAINTEXT
+      KAFKA_INTER_BROKER_LISTENER_NAME: INTERNAL
+      KAFKA_CONTROLLER_QUORUM_VOTERS: 1@kafka:9093
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
+      KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: 1
+      KAFKA_TRANSACTION_STATE_LOG_MIN_ISR: 1
+      KAFKA_GROUP_INITIAL_REBALANCE_DELAY_MS: 0
+      KAFKA_LOG_DIRS: /var/lib/kafka/data
+    volumes:
+      - kafka_data:/var/lib/kafka/data
+
+  kafka-ui:
+    image: provectuslabs/kafka-ui:latest
+    container_name: bpmn-kafka-ui
+    ports:
+      - "8091:8080"
+    environment:
+      KAFKA_CLUSTERS_0_NAME: bpmn
+      KAFKA_CLUSTERS_0_BOOTSTRAPSERVERS: kafka:9094
+    depends_on:
+      - kafka
+
 volumes:
   postgres_data:
+    driver: local
+  kafka_data:
     driver: local

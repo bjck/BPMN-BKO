@@ -145,14 +145,37 @@ export class BpmnEditorApp {
 
     const camundaDescriptor = await loadCamundaDescriptor();
     await this.loadServiceTaskLogics();
-    this.modeler = new Modeler({
-      container: this.canvasElement,
-      keyboard: { bindTo: document },
-      moddleExtensions: {
-        camunda: camundaDescriptor,
-        engine: ENGINE_MODDLE_DESCRIPTOR,
-      },
-    });
+    const allowMoveModule = {
+      __init__: ['allowMoveInit'],
+      allowMoveInit: ['rules', function (rules) {
+        if (rules && typeof rules.addRule === 'function') {
+          rules.addRule('elements.move', 500, function () {
+            return true;
+          });
+        }
+      }],
+    };
+
+    try {
+      this.modeler = new Modeler({
+        container: this.canvasElement,
+        keyboard: { bindTo: document },
+        moddleExtensions: {
+          camunda: camundaDescriptor,
+          engine: ENGINE_MODDLE_DESCRIPTOR,
+        },
+        additionalModules: [allowMoveModule],
+      });
+    } catch (err) {
+      this.modeler = new Modeler({
+        container: this.canvasElement,
+        keyboard: { bindTo: document },
+        moddleExtensions: {
+          camunda: camundaDescriptor,
+          engine: ENGINE_MODDLE_DESCRIPTOR,
+        },
+      });
+    }
 
     const eventBus = this.modeler.get('eventBus');
     eventBus.on('selection.changed', ({ newSelection }) => {
@@ -853,6 +876,7 @@ export class BpmnEditorApp {
     const isParallelGateway = type === 'bpmn:ParallelGateway';
     const isComplexGateway = type === 'bpmn:ComplexGateway';
     const isEventBasedGateway = type === 'bpmn:EventBasedGateway';
+    const isGateway = isExclusiveGateway || isInclusiveGateway || isParallelGateway || isComplexGateway || isEventBasedGateway;
     const engineCfg = this.engineConfigByElementId[element.id] || {};
 
     this.propertyPlaceholder.classList.add('hidden');
@@ -1043,6 +1067,23 @@ export class BpmnEditorApp {
           </div>
         `;
       }
+      if (isGateway) {
+        const gatewayTypes = [
+          { value: 'bpmn:ExclusiveGateway', label: 'Exclusive Gateway (XOR)' },
+          { value: 'bpmn:ParallelGateway', label: 'Parallel Gateway (AND)' },
+          { value: 'bpmn:InclusiveGateway', label: 'Inclusive Gateway (OR)' },
+          { value: 'bpmn:EventBasedGateway', label: 'Event-based Gateway' },
+          { value: 'bpmn:ComplexGateway', label: 'Complex Gateway' },
+        ];
+        html += `
+          <div class="form-row">
+            <label>Gateway type</label>
+            <select id="prop-gateway-type">
+              ${gatewayTypes.map((opt) => `<option value="${escapeHtml(opt.value)}" ${type === opt.value ? 'selected' : ''}>${escapeHtml(opt.label)}</option>`).join('')}
+            </select>
+          </div>
+        `;
+      }
       if (isExclusiveGateway) {
         const outgoing = businessObject.outgoing || [];
         const defaultFlowId = businessObject.default?.id || engineCfg.defaultFlow || '';
@@ -1103,6 +1144,7 @@ export class BpmnEditorApp {
       isParallelGateway,
       isComplexGateway,
       isEventBasedGateway,
+      isGateway,
     };
     this.propertyForm.querySelectorAll('input, select, textarea').forEach((field) => {
       field.addEventListener('change', () => this.applyProperties(element, flags));
@@ -1116,6 +1158,10 @@ export class BpmnEditorApp {
     this.propertyForm.querySelector('#prop-service-task-mode')?.addEventListener('change', () => {
       this.applyProperties(element, flags);
       this.renderProperties(element);
+    });
+
+    this.propertyForm.querySelector('#prop-gateway-type')?.addEventListener('change', () => {
+      this.applyProperties(element, flags);
     });
   }
 
@@ -1138,6 +1184,19 @@ export class BpmnEditorApp {
       if (requestedTaskKind && requestedTaskKind !== element.type) {
         const replacement = this.modeler.get('bpmnReplace').replaceElement(element, { type: requestedTaskKind });
         if (replacement) {
+          this.modeler.get('selection').select(replacement);
+          this.renderProperties(replacement);
+        }
+        return;
+      }
+    }
+
+    if (flags.isGateway) {
+      const requestedGatewayType = document.getElementById('prop-gateway-type')?.value;
+      if (requestedGatewayType && requestedGatewayType !== (element.businessObject?.$type || element.type)) {
+        const replacement = this.modeler.get('bpmnReplace').replaceElement(element, { type: requestedGatewayType });
+        if (replacement) {
+          this.modeler.get('selection').select(replacement);
           this.renderProperties(replacement);
         }
         return;

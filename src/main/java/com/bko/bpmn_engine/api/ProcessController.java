@@ -41,6 +41,42 @@ public class ProcessController {
         return ResponseEntity.status(HttpStatus.CREATED).body(toCreateInstanceResponse(instance));
     }
 
+    /**
+     * Start a process instance by message (message start event).
+     * Use when the process has a start event with engine:messageRef.
+     */
+    @PostMapping("/process-instances/message-start")
+    public ResponseEntity<CreateInstanceResponse> messageStart(@RequestBody MessageStartRequest request) {
+        Map<String, Object> variables = request.variables() != null ? request.variables() : Map.of();
+        String correlationKey = request.correlationKey() != null ? request.correlationKey() : null;
+        ProcessInstance instance = processEngine.triggerMessageStart(
+                request.processDefinitionId(), request.messageRef(), correlationKey, variables);
+        return ResponseEntity.status(HttpStatus.CREATED).body(toCreateInstanceResponse(instance));
+    }
+
+    /**
+     * Trigger an intermediate catch event by instance and node id (e.g. after process is waiting at that catch).
+     */
+    @PostMapping("/process-instances/{instanceId}/trigger-catch")
+    public ResponseEntity<Void> triggerCatch(
+            @PathVariable UUID instanceId,
+            @RequestBody TriggerCatchRequest request) {
+        Map<String, Object> variables = request.variables() != null ? request.variables() : Map.of();
+        processEngine.triggerCatchEvent(instanceId, request.nodeId(), variables);
+        return ResponseEntity.noContent().build();
+    }
+
+    /**
+     * Trigger a waiting intermediate catch event by messageRef (and optional correlationKey).
+     */
+    @PostMapping("/bpmn-events/trigger-catch")
+    public ResponseEntity<Void> triggerCatchByMessageRef(@RequestBody TriggerCatchByMessageRefRequest request) {
+        Map<String, Object> variables = request.variables() != null ? request.variables() : Map.of();
+        String correlationKey = request.correlationKey() != null ? request.correlationKey() : null;
+        processEngine.triggerCatchEventByMessageRef(request.messageRef(), correlationKey, variables);
+        return ResponseEntity.noContent().build();
+    }
+
     @GetMapping("/process-instances/{instanceId}")
     public ResponseEntity<InstanceResponse> getInstance(@PathVariable UUID instanceId) {
         ProcessInstance instance = processEngine.getInstance(instanceId);
@@ -64,6 +100,15 @@ public class ProcessController {
     public ResponseEntity<Void> cancelInstance(@PathVariable UUID instanceId) {
         processEngine.cancelInstance(instanceId);
         return ResponseEntity.noContent().build();
+    }
+
+    /**
+     * Restart a failed process instance from the step it failed on.
+     */
+    @PostMapping("/process-instances/{instanceId}/restart")
+    public ResponseEntity<InstanceResponse> restartFailed(@PathVariable UUID instanceId) {
+        ProcessInstance instance = processEngine.restartFailedInstance(instanceId);
+        return ResponseEntity.ok(toInstanceResponse(instance));
     }
 
     @GetMapping("/processes")
