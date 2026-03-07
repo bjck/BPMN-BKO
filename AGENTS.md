@@ -28,6 +28,7 @@ This file orients AI agents (e.g. Cursor) working on this codebase.
 | App config | `src/main/resources/application.yaml` | Virtual threads, Kafka, Gemini placeholders (no secrets) |
 | Persistence config | `src/main/resources/application-persistence.yaml` | Datasource, JPA (profile: `persistence`) |
 | BPMN editor (frontend) | `src/main/resources/static/js/bpmn/editor-app.js` | `BpmnEditorApp`: modeler init, properties panel (ID, name, gateway type dropdown, default flow, task config), gateway replace via `bpmnReplace`, custom `elements.move` rule so shapes can be moved without snap-back. Editor page: `pages/editor-page.js`. |
+| E2E SPA (mocked API) | `e2e/spa.spec.js`, `e2e/fixtures/mock-data.js` | SPA tests mock all `/v1` API; list endpoint uses RegExp `/\/v1\/process-instances(\?|$)/` so `?page=1&size=20` is matched. No backend required. |
 
 ## Conventions (from `.cursor/rules`)
 
@@ -56,8 +57,11 @@ mvn spring-boot:run
 # Tests
 mvn test
 
-# E2E (start app first)
+# E2E (start app first for full suite)
 npm install && npx playwright install chromium && npm run test:e2e
+
+# E2E SPA only (mocked API; no backend)
+npm run test:e2e:spa
 
 # JMH benchmarks
 mvn package -DskipTests && java -jar target/jmh-benchmarks-jmh.jar

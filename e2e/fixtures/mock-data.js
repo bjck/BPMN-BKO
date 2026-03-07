@@ -35,6 +35,8 @@ const mockInstances = {
       variables: { counter: 1 },
     },
   ],
+  totalCount: 1,
+  hasMore: false,
 };
 
 const mockInstanceDetail = {

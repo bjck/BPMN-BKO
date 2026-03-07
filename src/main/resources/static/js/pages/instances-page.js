@@ -11,8 +11,10 @@ export function createInstancesPage({ showToast }) {
   let selectedInstance = null;
   let selectedHistory = { events: [], taskExecutions: [] };
 
-  const PAGE_SIZE = 10;
+  const PAGE_SIZE = 20;
   let currentPage = 1;
+  let totalCount = 0;
+  let hasMore = false;
   let allInstances = [];
 
   function setSelectedRow(instanceId) {
@@ -31,36 +33,36 @@ export function createInstancesPage({ showToast }) {
       return;
     }
 
-    if (allInstances.length === 0) {
+    if (allInstances.length === 0 && currentPage === 1) {
       container.innerHTML = '';
       container.classList.add('hidden');
       return;
     }
 
-    const totalPages = Math.max(1, Math.ceil(allInstances.length / PAGE_SIZE));
-    const start = (currentPage - 1) * PAGE_SIZE + 1;
-    const end = Math.min(currentPage * PAGE_SIZE, allInstances.length);
+    const totalPages = Math.max(1, Math.ceil(totalCount / PAGE_SIZE));
+    const start = totalCount === 0 ? 0 : (currentPage - 1) * PAGE_SIZE + 1;
+    const end = Math.min(currentPage * PAGE_SIZE, totalCount);
 
     container.classList.remove('hidden');
     container.innerHTML = `
-      <span class="pagination-summary">${start}–${end} of ${allInstances.length}</span>
+      <span class="pagination-summary">${start}–${end} of ${totalCount}</span>
       <div class="pagination-controls">
         <button type="button" class="btn btn-secondary pagination-prev" ${currentPage <= 1 ? 'disabled' : ''} aria-label="Previous page">Prev</button>
         <span class="pagination-page" aria-live="polite">Page ${currentPage} of ${totalPages}</span>
-        <button type="button" class="btn btn-secondary pagination-next" ${currentPage >= totalPages ? 'disabled' : ''} aria-label="Next page">Next</button>
+        <button type="button" class="btn btn-secondary pagination-next" ${currentPage >= totalPages && !hasMore ? 'disabled' : ''} aria-label="Next page">Next</button>
       </div>
     `;
 
     container.querySelector('.pagination-prev')?.addEventListener('click', () => {
       if (currentPage > 1) {
         currentPage -= 1;
-        renderCurrentPage();
+        loadInstancesList();
       }
     });
     container.querySelector('.pagination-next')?.addEventListener('click', () => {
-      if (currentPage < totalPages) {
+      if (hasMore || currentPage < totalPages) {
         currentPage += 1;
-        renderCurrentPage();
+        loadInstancesList();
       }
     });
   }
@@ -71,13 +73,7 @@ export function createInstancesPage({ showToast }) {
       return;
     }
 
-    const totalPages = Math.max(1, Math.ceil(allInstances.length / PAGE_SIZE));
-    if (currentPage > totalPages) {
-      currentPage = totalPages;
-    }
-
-    const start = (currentPage - 1) * PAGE_SIZE;
-    const pageInstances = allInstances.slice(start, start + PAGE_SIZE);
+    const pageInstances = allInstances;
 
     list.innerHTML = pageInstances.length
       ? pageInstances.map((instance) => {
@@ -124,12 +120,15 @@ export function createInstancesPage({ showToast }) {
     list.innerHTML = '<span class="text-muted">Loading...</span>';
 
     try {
-      const { instances } = await fetchJson(`${API}/process-instances`);
+      const url = `${API}/process-instances?page=${currentPage}&size=${PAGE_SIZE}`;
+      const data = await fetchJson(url);
       if (destroyed) {
         return;
       }
 
-      allInstances = instances || [];
+      allInstances = data.instances || [];
+      totalCount = data.totalCount != null ? Number(data.totalCount) : allInstances.length;
+      hasMore = data.hasMore === true;
       renderCurrentPage();
     } catch (error) {
       if (!destroyed) {

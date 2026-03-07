@@ -610,6 +610,45 @@ public class ProcessEngine {
                 .toList();
     }
 
+    /**
+     * Returns one page of process instances (active first, then history by completed_at desc when persistence is enabled).
+     * When persistence is disabled, returns a page of in-memory instances.
+     */
+    public InstancesPage getInstancesPage(int page, int size) {
+        if (instanceStorage != null) {
+            ProcessInstanceStorage.InstancePage pageResult = instanceStorage.findAllPage(page, size);
+            return new InstancesPage(
+                    pageResult.instances().stream().map(ProcessEngine::toProcessInstance).toList(),
+                    pageResult.page(),
+                    pageResult.pageSize(),
+                    pageResult.totalCount(),
+                    pageResult.hasMore()
+            );
+        }
+        List<ProcessInstance> all = new ArrayList<>();
+        all.addAll(activeInstances.values());
+        all.addAll(completedInstances.values());
+        List<ProcessInstance> sorted = all.stream()
+                .sorted((a, b) -> b.createdAt().compareTo(a.createdAt()))
+                .toList();
+        int total = sorted.size();
+        int safeSize = Math.min(Math.max(1, size), 100);
+        int safePage = Math.max(1, page);
+        int start = (safePage - 1) * safeSize;
+        int end = Math.min(start + safeSize, total);
+        List<ProcessInstance> pageList = start < total ? sorted.subList(start, end) : List.of();
+        return new InstancesPage(pageList, safePage, safeSize, total, end < total);
+    }
+
+    /** One page of process instances with pagination info. */
+    public record InstancesPage(
+            List<ProcessInstance> instances,
+            int page,
+            int pageSize,
+            long totalCount,
+            boolean hasMore
+    ) {}
+
     public void registerWorker(String taskImplementation, TaskWorker worker) {
         workers.put(taskImplementation, worker);
     }

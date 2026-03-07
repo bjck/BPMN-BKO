@@ -141,8 +141,13 @@ public class ProcessController {
     }
 
     @GetMapping("/process-instances")
-    public ResponseEntity<ListInstancesResponse> listInstances() {
-        var instances = processEngine.getAllInstances().stream()
+    public ResponseEntity<ListInstancesResponse> listInstances(
+            @RequestParam(required = false) Integer page,
+            @RequestParam(required = false) Integer size) {
+        int pageNum = page != null && page > 0 ? page : 1;
+        int pageSize = size != null && size > 0 ? Math.min(size, 100) : 50;
+        var pageResult = processEngine.getInstancesPage(pageNum, pageSize);
+        var instances = pageResult.instances().stream()
                 .map(i -> new ListInstancesResponse.InstanceSummary(
                         i.instanceId(),
                         i.processDefinitionId(),
@@ -153,7 +158,13 @@ public class ProcessController {
                         copyVariables(i.variables())
                 ))
                 .toList();
-        return ResponseEntity.ok(new ListInstancesResponse(instances));
+        return ResponseEntity.ok(new ListInstancesResponse(
+                instances,
+                pageResult.page(),
+                pageResult.pageSize(),
+                pageResult.totalCount(),
+                pageResult.hasMore()
+        ));
     }
 
     private static CreateInstanceResponse toCreateInstanceResponse(ProcessInstance instance) {

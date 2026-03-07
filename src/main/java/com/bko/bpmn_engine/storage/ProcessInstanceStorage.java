@@ -45,8 +45,27 @@ public interface ProcessInstanceStorage {
 
     /**
      * Load all instances from storage (for listing when persistence is enabled).
+     * Returns first page (default size) for backward compatibility.
      */
     List<RecoveredInstance> findAll();
+
+    /**
+     * Load one page of instances: all active first, then one page of history by completed_at desc.
+     *
+     * @param page 1-based page number
+     * @param size page size (max applied by implementation)
+     * @return page result with instances and pagination info
+     */
+    InstancePage findAllPage(int page, int size);
+
+    /** Result of paginated list: active + one page of history. */
+    record InstancePage(
+            List<RecoveredInstance> instances,
+            int page,
+            int pageSize,
+            long totalCount,
+            boolean hasMore
+    ) {}
 
     record TaskExecutionRecord(String taskId, String taskType, Instant startedAt, Instant completedAt, long durationMs) {
     }

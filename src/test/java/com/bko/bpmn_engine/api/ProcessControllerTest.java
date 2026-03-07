@@ -119,6 +119,26 @@ class ProcessControllerTest {
                 .andExpect(jsonPath("$.serviceTaskLogics[?(@.beanName=='counterServiceTaskLogic')]").exists());
     }
 
+    @Test
+    void getProcessInstancesList_returns200_withPaginationFields() throws Exception {
+        mockMvc.perform(get("/v1/process-instances"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.instances").isArray())
+                .andExpect(jsonPath("$.page").value(1))
+                .andExpect(jsonPath("$.pageSize").exists())
+                .andExpect(jsonPath("$.totalCount").exists())
+                .andExpect(jsonPath("$.hasMore").exists());
+    }
+
+    @Test
+    void getProcessInstancesList_withPageAndSize_returnsRequestedPage() throws Exception {
+        mockMvc.perform(get("/v1/process-instances").param("page", "2").param("size", "10"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.instances").isArray())
+                .andExpect(jsonPath("$.page").value(2))
+                .andExpect(jsonPath("$.pageSize").value(10));
+    }
+
     private void deployMinimalProcess() throws Exception {
         String body = objectMapper.writeValueAsString(Map.of("bpmnXml", minimalBpmn));
         mockMvc.perform(post("/v1/processes")

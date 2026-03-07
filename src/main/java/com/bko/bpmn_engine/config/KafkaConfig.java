@@ -106,6 +106,10 @@ public class KafkaConfig {
         props.put(ProducerConfig.MAX_BLOCK_MS_CONFIG, 5000);
         props.put(ProducerConfig.REQUEST_TIMEOUT_MS_CONFIG, 10000);
         props.put(ProducerConfig.DELIVERY_TIMEOUT_MS_CONFIG, 15000);
+        // Throughput: LZ4 reduces payload size and network I/O with low CPU cost; batching coalesces back-to-back checkpoints (e.g. 10 per chain).
+        props.put(ProducerConfig.COMPRESSION_TYPE_CONFIG, "lz4");
+        props.put(ProducerConfig.LINGER_MS_CONFIG, 2);
+        props.put(ProducerConfig.BATCH_SIZE_CONFIG, 32768);
         return new DefaultKafkaProducerFactory<>(props);
     }
 

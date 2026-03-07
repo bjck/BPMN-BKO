@@ -222,7 +222,8 @@ function installMockApi(page) {
     return route.continue();
   });
 
-  page.route('**/v1/process-instances', (route) => {
+  // List endpoint: match /v1/process-instances or /v1/process-instances?page=... (glob can miss query string)
+  page.route(/\/v1\/process-instances(\?|$)/, (route) => {
     if (route.request().method() === 'GET') {
       return route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(mockInstances) });
     }

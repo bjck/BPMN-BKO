@@ -49,6 +49,8 @@ When both the **persistence** profile and **Kafka** are enabled, **checkpoint-vi
 
 The engine uses a dedicated checkpoint producer (key = `instanceId`, value = JSON payload) and waits for Kafka ack before continuing. Recovery on startup still loads from the DB; the DB may be slightly behind the last engine state until the consumer has processed the topic. To use direct DB checkpoints instead, set `BPMN_KAFKA_CHECKPOINT_ENABLED=false`.
 
+**Throughput:** A 10-task sequential process triggers multiple checkpoints (e.g. one per task plus completion). The checkpoint producer uses **LZ4 compression** and a short **linger** (2 ms) so back-to-back checkpoints can be batched, reducing round-trips and improving instances/sec when checkpoint-via-Kafka is enabled.
+
 ### Running with PostgreSQL and Kafka
 
 **Docker Compose (full stack: DB + Kafka + Kafka UI + app):**
@@ -187,6 +189,7 @@ src/
 |--------|----------|-------------|
 | `POST` | `/v1/processes` | Deploy BPMN XML; returns `processDefinitionId` |
 | `GET`  | `/v1/processes` | List deployed process definition IDs |
+| `GET`  | `/v1/process-instances` | List instances (paginated); query: `page`, `size` |
 | `POST` | `/v1/process-instances` | Create instance; body: `{ processDefinitionId, variables? }` |
 | `POST` | `/v1/process-instances/message-start` | Start instance by message (message start event); body: `{ processDefinitionId, messageRef, correlationKey?, variables? }` |
 | `POST` | `/v1/process-instances/{id}/trigger-catch` | Trigger intermediate catch event by node id; body: `{ nodeId, variables? }` |
@@ -226,7 +229,7 @@ npm run test:e2e
 ```
 
 - **`e2e/bpmn-viewer.spec.js`** — Viewer displays diagram for a selected instance (deploy counting process, create instance, open instances page).
-- **`e2e/spa.spec.js`** — SPA navigation and AI chat with mocked API (no backend required).
+- **`e2e/spa.spec.js`** — SPA navigation and AI chat with mocked API (no backend required). The instances list is mocked via a RegExp so `GET /v1/process-instances?page=1&size=20` is intercepted; mock data lives in `e2e/fixtures/mock-data.js`.
 - **`e2e/bpmn-diagrams.spec.js`** — Full BPMN execution against live backend: minimal process, user task (complete-task), exclusive and parallel gateways, **message start event**, **intermediate catch event** (trigger by nodeId or messageRef), **intermediate throw event**, and **Kafka service task** (topic, messageMapping, keyMapping, resultVariable). Requires backend; Kafka test is skipped if Kafka is not enabled.
 
 Optional: `BASE_URL=http://localhost:8080 npm run test:e2e` (default is `http://localhost:8080`). For the Kafka service task test, run with Kafka (e.g. `docker compose -f docker/docker-compose.dev.yml up -d`) and `BPMN_KAFKA_ENABLED=true`.
