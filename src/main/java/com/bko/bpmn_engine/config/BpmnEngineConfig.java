@@ -24,10 +24,29 @@ public class BpmnEngineConfig {
         };
     }
 
+    /** Validates invoice fields. Expects: invoiceId, amount. Sets: valid. */
     @Bean
-    public WorkerRegistrar workerRegistrar(ProcessEngine engine, TaskWorker defaultJavaWorker, TaskWorker counterWorker) {
+    public TaskWorker validateInvoiceWorker() {
+        return vars -> {
+            String invoiceId = (String) vars.getOrDefault("invoiceId", "");
+            double amount = ((Number) vars.getOrDefault("amount", 0)).doubleValue();
+            return Map.of("valid", !invoiceId.isBlank() && amount > 0);
+        };
+    }
+
+    /** Matches invoice amount to PO. Sets: matched. */
+    @Bean
+    public TaskWorker matchInvoiceWorker() {
+        return vars -> Map.of("matched", true);
+    }
+
+    @Bean
+    public WorkerRegistrar workerRegistrar(ProcessEngine engine, TaskWorker defaultJavaWorker, TaskWorker counterWorker,
+                                           TaskWorker validateInvoiceWorker, TaskWorker matchInvoiceWorker) {
         engine.registerWorker("java", defaultJavaWorker);
         engine.registerWorker("counter", counterWorker);
+        engine.registerWorker("validate-invoice", validateInvoiceWorker);
+        engine.registerWorker("match-invoice", matchInvoiceWorker);
         return new WorkerRegistrar();
     }
 

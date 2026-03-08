@@ -1,0 +1,208 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<bpmn:definitions
+  xmlns:bpmn="http://www.omg.org/spec/BPMN/20100524/MODEL"
+  xmlns:camunda="http://camunda.org/schema/1.0/bpmn"
+  xmlns:engine="https://bko.dev/schema/bpmn-engine/1.0">
+
+  <bpmn:process id="Process_InvoiceApproval" name="Invoice Approval Workflow">
+
+    <!-- ══ START ══ -->
+    <bpmn:startEvent id="StartEvent_1" name="Invoice Received">
+      <bpmn:outgoing>Flow_1</bpmn:outgoing>
+    </bpmn:startEvent>
+
+    <!-- Step 1: Validate invoice structure and totals -->
+    <bpmn:serviceTask id="Task_ValidateInvoice" name="Validate Invoice" implementation="validate-invoice">
+      <bpmn:incoming>Flow_1</bpmn:incoming>
+      <bpmn:outgoing>Flow_2</bpmn:outgoing>
+    </bpmn:serviceTask>
+
+    <!-- Validation gate -->
+    <bpmn:exclusiveGateway id="GW_Validate" name="Invoice Valid?" default="Flow_Invalid">
+      <bpmn:incoming>Flow_2</bpmn:incoming>
+      <bpmn:outgoing>Flow_ToFetch</bpmn:outgoing>
+      <bpmn:outgoing>Flow_Invalid</bpmn:outgoing>
+    </bpmn:exclusiveGateway>
+
+    <bpmn:endEvent id="EndEvent_Rejected" name="Invoice Rejected">
+      <bpmn:incoming>Flow_Invalid</bpmn:incoming>
+    </bpmn:endEvent>
+
+    <!-- Parallel fetch: vendor + PO lookup concurrently -->
+    <bpmn:parallelGateway id="GW_FetchFork" name="Fetch Data">
+      <bpmn:incoming>Flow_ToFetch</bpmn:incoming>
+      <bpmn:outgoing>Flow_ToVendor</bpmn:outgoing>
+      <bpmn:outgoing>Flow_ToPO</bpmn:outgoing>
+    </bpmn:parallelGateway>
+
+    <!-- Branch A: Vendor lookup -->
+    <bpmn:serviceTask id="Task_LookupVendor" name="Lookup Vendor" implementation="rest">
+      <bpmn:incoming>Flow_ToVendor</bpmn:incoming>
+      <bpmn:outgoing>Flow_VendorDone</bpmn:outgoing>
+      <bpmn:extensionElements>
+        <engine:taskConfiguration
+          type="rest"
+          method="GET"
+          url="https://httpbin.org/anything"
+          authenticationType="bearer"
+          bearerToken="${erpApiToken}"
+          resultVariable="vendorData"
+          timeoutSeconds="10"/>
+      </bpmn:extensionElements>
+    </bpmn:serviceTask>
+
+    <!-- Branch B: Purchase Order lookup -->
+    <bpmn:serviceTask id="Task_LookupPO" name="Lookup Purchase Order" implementation="rest">
+      <bpmn:incoming>Flow_ToPO</bpmn:incoming>
+      <bpmn:outgoing>Flow_PODone</bpmn:outgoing>
+      <bpmn:extensionElements>
+        <engine:taskConfiguration
+          type="rest"
+          method="GET"
+          url="https://httpbin.org/anything"
+          authenticationType="bearer"
+          bearerToken="${erpApiToken}"
+          resultVariable="poData"
+          timeoutSeconds="10"/>
+      </bpmn:extensionElements>
+    </bpmn:serviceTask>
+
+    <!-- Join parallel fetch branches -->
+    <bpmn:parallelGateway id="GW_FetchJoin" name="Data Ready">
+      <bpmn:incoming>Flow_VendorDone</bpmn:incoming>
+      <bpmn:incoming>Flow_PODone</bpmn:incoming>
+      <bpmn:outgoing>Flow_ToMatch</bpmn:outgoing>
+    </bpmn:parallelGateway>
+
+    <!-- Step 2: Compare invoice amounts to PO -->
+    <bpmn:serviceTask id="Task_MatchInvoice" name="Match Invoice to PO" implementation="match-invoice">
+      <bpmn:incoming>Flow_ToMatch</bpmn:incoming>
+      <bpmn:outgoing>Flow_ToMatchGW</bpmn:outgoing>
+    </bpmn:serviceTask>
+
+    <!-- PO match gate -->
+    <bpmn:exclusiveGateway id="GW_Match" name="PO Matches?" default="Flow_ToDiscrepancy">
+      <bpmn:incoming>Flow_ToMatchGW</bpmn:incoming>
+      <bpmn:outgoing>Flow_Matched</bpmn:outgoing>
+      <bpmn:outgoing>Flow_ToDiscrepancy</bpmn:outgoing>
+    </bpmn:exclusiveGateway>
+
+    <!-- Discrepancy: AP Manager resolves manually -->
+    <bpmn:userTask id="UserTask_ResolveDiscrepancy" name="Resolve PO Discrepancy" camunda:assignee="ap-manager">
+      <bpmn:incoming>Flow_ToDiscrepancy</bpmn:incoming>
+      <bpmn:outgoing>Flow_DiscrepancyDone</bpmn:outgoing>
+    </bpmn:userTask>
+
+    <!-- High-value approval gate (implicit merge from matched + discrepancy-resolved) -->
+    <bpmn:exclusiveGateway id="GW_HighValue" name="Amount > $10,000?" default="Flow_AutoApprove">
+      <bpmn:incoming>Flow_Matched</bpmn:incoming>
+      <bpmn:incoming>Flow_DiscrepancyDone</bpmn:incoming>
+      <bpmn:outgoing>Flow_NeedsApproval</bpmn:outgoing>
+      <bpmn:outgoing>Flow_AutoApprove</bpmn:outgoing>
+    </bpmn:exclusiveGateway>
+
+    <!-- High-value: Finance Director sign-off -->
+    <bpmn:userTask id="UserTask_DirectorApproval" name="Director Approval" camunda:assignee="finance-director">
+      <bpmn:incoming>Flow_NeedsApproval</bpmn:incoming>
+      <bpmn:outgoing>Flow_DirectorDone</bpmn:outgoing>
+    </bpmn:userTask>
+
+    <!-- Step 3: Post journal entry to General Ledger -->
+    <!-- Implicit exclusive merge: receives from auto-approve OR director-approval -->
+    <bpmn:serviceTask id="Task_PostGL" name="Post to General Ledger" implementation="rest">
+      <bpmn:incoming>Flow_AutoApprove</bpmn:incoming>
+      <bpmn:incoming>Flow_DirectorDone</bpmn:incoming>
+      <bpmn:outgoing>Flow_GLDone</bpmn:outgoing>
+      <bpmn:extensionElements>
+        <engine:taskConfiguration
+          type="rest"
+          method="POST"
+          url="https://httpbin.org/anything"
+          authenticationType="bearer"
+          bearerToken="${erpApiToken}"
+          body="{'invoiceId': invoiceId, 'vendorId': vendorId, 'amount': amount, 'poNumber': poNumber, 'description': 'AP Invoice ' + invoiceId}"
+          resultVariable="glEntry"
+          timeoutSeconds="15"/>
+      </bpmn:extensionElements>
+    </bpmn:serviceTask>
+
+    <!-- Step 4: Publish invoice-approved domain event -->
+    <bpmn:serviceTask id="Task_PublishApproved" name="Publish Invoice Approved" implementation="kafka">
+      <bpmn:incoming>Flow_GLDone</bpmn:incoming>
+      <bpmn:outgoing>Flow_PublishDone</bpmn:outgoing>
+      <bpmn:extensionElements>
+        <engine:taskConfiguration
+          type="kafka"
+          topic="invoice-events"
+          messageMapping="{'eventType': 'INVOICE_APPROVED', 'invoiceId': invoiceId, 'vendorId': vendorId, 'amount': amount, 'poNumber': poNumber}"
+          keyMapping="invoiceId"
+          resultVariable="kafkaApprovedResult"/>
+      </bpmn:extensionElements>
+    </bpmn:serviceTask>
+
+    <!-- Step 5: Schedule payment in payment system -->
+    <bpmn:serviceTask id="Task_SchedulePayment" name="Schedule Payment" implementation="rest">
+      <bpmn:incoming>Flow_PublishDone</bpmn:incoming>
+      <bpmn:outgoing>Flow_ScheduleDone</bpmn:outgoing>
+      <bpmn:extensionElements>
+        <engine:taskConfiguration
+          type="rest"
+          method="POST"
+          url="https://httpbin.org/anything"
+          authenticationType="bearer"
+          bearerToken="${paymentsApiToken}"
+          body="{'invoiceId': invoiceId, 'vendorId': vendorId, 'amount': amount}"
+          resultVariable="paymentRef"
+          timeoutSeconds="15"/>
+      </bpmn:extensionElements>
+    </bpmn:serviceTask>
+
+    <!-- Step 6: Publish payment-scheduled domain event -->
+    <bpmn:serviceTask id="Task_PublishScheduled" name="Publish Payment Scheduled" implementation="kafka">
+      <bpmn:incoming>Flow_ScheduleDone</bpmn:incoming>
+      <bpmn:outgoing>Flow_End</bpmn:outgoing>
+      <bpmn:extensionElements>
+        <engine:taskConfiguration
+          type="kafka"
+          topic="payment-events"
+          messageMapping="{'eventType': 'PAYMENT_SCHEDULED', 'invoiceId': invoiceId, 'vendorId': vendorId, 'amount': amount}"
+          keyMapping="invoiceId"
+          resultVariable="kafkaScheduledResult"/>
+      </bpmn:extensionElements>
+    </bpmn:serviceTask>
+
+    <!-- ══ END ══ -->
+    <bpmn:endEvent id="EndEvent_1" name="Invoice Processed">
+      <bpmn:incoming>Flow_End</bpmn:incoming>
+    </bpmn:endEvent>
+
+    <!-- ══ Sequence Flows ══ -->
+    <bpmn:sequenceFlow id="Flow_1"               sourceRef="StartEvent_1"                targetRef="Task_ValidateInvoice"/>
+    <bpmn:sequenceFlow id="Flow_2"               sourceRef="Task_ValidateInvoice"         targetRef="GW_Validate"/>
+    <bpmn:sequenceFlow id="Flow_ToFetch"         sourceRef="GW_Validate"                 targetRef="GW_FetchFork">
+      <bpmn:conditionExpression>${valid == true}</bpmn:conditionExpression>
+    </bpmn:sequenceFlow>
+    <bpmn:sequenceFlow id="Flow_Invalid"         sourceRef="GW_Validate"                 targetRef="EndEvent_Rejected"/>
+    <bpmn:sequenceFlow id="Flow_ToVendor"        sourceRef="GW_FetchFork"                targetRef="Task_LookupVendor"/>
+    <bpmn:sequenceFlow id="Flow_ToPO"            sourceRef="GW_FetchFork"                targetRef="Task_LookupPO"/>
+    <bpmn:sequenceFlow id="Flow_VendorDone"      sourceRef="Task_LookupVendor"           targetRef="GW_FetchJoin"/>
+    <bpmn:sequenceFlow id="Flow_PODone"          sourceRef="Task_LookupPO"               targetRef="GW_FetchJoin"/>
+    <bpmn:sequenceFlow id="Flow_ToMatch"         sourceRef="GW_FetchJoin"                targetRef="Task_MatchInvoice"/>
+    <bpmn:sequenceFlow id="Flow_ToMatchGW"       sourceRef="Task_MatchInvoice"           targetRef="GW_Match"/>
+    <bpmn:sequenceFlow id="Flow_Matched"         sourceRef="GW_Match"                    targetRef="GW_HighValue">
+      <bpmn:conditionExpression>${matched == true}</bpmn:conditionExpression>
+    </bpmn:sequenceFlow>
+    <bpmn:sequenceFlow id="Flow_ToDiscrepancy"   sourceRef="GW_Match"                    targetRef="UserTask_ResolveDiscrepancy"/>
+    <bpmn:sequenceFlow id="Flow_DiscrepancyDone" sourceRef="UserTask_ResolveDiscrepancy" targetRef="GW_HighValue"/>
+    <bpmn:sequenceFlow id="Flow_NeedsApproval"   sourceRef="GW_HighValue"                targetRef="UserTask_DirectorApproval">
+      <bpmn:conditionExpression>${amount > 10000}</bpmn:conditionExpression>
+    </bpmn:sequenceFlow>
+    <bpmn:sequenceFlow id="Flow_AutoApprove"     sourceRef="GW_HighValue"                targetRef="Task_PostGL"/>
+    <bpmn:sequenceFlow id="Flow_DirectorDone"    sourceRef="UserTask_DirectorApproval"   targetRef="Task_PostGL"/>
+    <bpmn:sequenceFlow id="Flow_GLDone"          sourceRef="Task_PostGL"                 targetRef="Task_PublishApproved"/>
+    <bpmn:sequenceFlow id="Flow_PublishDone"     sourceRef="Task_PublishApproved"        targetRef="Task_SchedulePayment"/>
+    <bpmn:sequenceFlow id="Flow_ScheduleDone"    sourceRef="Task_SchedulePayment"        targetRef="Task_PublishScheduled"/>
+    <bpmn:sequenceFlow id="Flow_End"             sourceRef="Task_PublishScheduled"       targetRef="EndEvent_1"/>
+
+  </bpmn:process>
+</bpmn:definitions>
