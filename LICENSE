@@ -1,0 +1,67 @@
+Copyright (c) 2026 Bjarne Kock. All rights reserved.
+
+TERMS AND CONDITIONS
+
+1. DEFINITIONS
+
+   "Software" refers to all source code, documentation, and associated files in
+   this repository.
+
+   "Commercial Use" means any use of the Software intended for or directed toward
+   commercial advantage or monetary compensation, including but not limited to:
+   use in a commercial product, SaaS offering, consulting service, or any other
+   revenue-generating activity.
+
+   "Non-Commercial Use" means personal, educational, or research use that is not
+   intended for or directed toward commercial advantage or monetary compensation.
+
+2. GRANT OF LICENSE
+
+   Subject to the terms of this license, the copyright holder grants you a
+   limited, non-exclusive, non-transferable, revocable license to:
+
+   a) View and read the Software;
+   b) Use the Software for Non-Commercial Use only;
+   c) Modify the Software for Non-Commercial Use only;
+   d) Distribute unmodified or modified copies of the Software for Non-Commercial
+      Use only, provided this license and all copyright notices are retained in
+      full.
+
+3. COMMERCIAL USE RESTRICTION
+
+   Commercial Use of this Software, in whole or in part, is strictly prohibited
+   without prior explicit written permission from the copyright holder.
+
+   To request permission for Commercial Use, contact the copyright holder directly:
+
+   Bjarne Kock — bjarnekock(at)gmail.com
+   or through the repository's issue tracker.
+
+4. CONDITIONS
+
+   Any permitted use of the Software must:
+
+   a) Retain this license file and all copyright notices intact;
+   b) Clearly attribute the original author in any distribution or derivative work;
+   c) Not misrepresent the origin of the Software or claim original authorship.
+
+5. DISCLAIMER OF WARRANTIES
+
+   THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+   IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+   FITNESS FOR A PARTICULAR PURPOSE, AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+   COPYRIGHT HOLDER BE LIABLE FOR ANY CLAIM, DAMAGES, OR OTHER LIABILITY, WHETHER
+   IN AN ACTION OF CONTRACT, TORT, OR OTHERWISE, ARISING FROM, OUT OF, OR IN
+   CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
+
+6. TERMINATION
+
+   This license is automatically terminated if you violate any of its terms. Upon
+   termination, you must cease all use and destroy all copies of the Software in
+   your possession.
+
+7. GOVERNING LAW
+
+   This license shall be governed by and construed in accordance with applicable
+   law. Any disputes arising under this license shall be resolved in the
+   jurisdiction of the copyright holder.
