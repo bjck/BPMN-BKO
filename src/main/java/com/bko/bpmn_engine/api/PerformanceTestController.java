@@ -3,6 +3,7 @@ package com.bko.bpmn_engine.api;
 import com.bko.bpmn_engine.engine.ProcessEngine;
 import com.bko.bpmn_engine.model.Completed;
 import com.bko.bpmn_engine.model.ProcessInstance;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
@@ -13,6 +14,7 @@ import java.util.concurrent.Executors;
 import java.util.concurrent.Semaphore;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
+import java.util.function.Supplier;
 
 /**
  * REST API for running performance tests.
@@ -26,22 +28,36 @@ public class PerformanceTestController {
 
     private final ProcessEngine processEngine;
     private final Semaphore concurrencyLimiter;
+    private final Supplier<ExecutorService> executorFactory;
 
+    @Autowired
     public PerformanceTestController(ProcessEngine processEngine,
             @Value("${bpmn.performance.max-concurrency:150}") int maxConcurrency) {
+        this(processEngine, new Semaphore(Math.max(1, maxConcurrency)), Executors::newVirtualThreadPerTaskExecutor);
+    }
+
+    /** For testing: inject a custom semaphore to simulate InterruptedException paths. */
+    PerformanceTestController(ProcessEngine processEngine, Semaphore concurrencyLimiter) {
+        this(processEngine, concurrencyLimiter, Executors::newVirtualThreadPerTaskExecutor);
+    }
+
+    /** For testing: inject executor factory to simulate InterruptedException during awaitTermination. */
+    PerformanceTestController(ProcessEngine processEngine, Semaphore concurrencyLimiter,
+            Supplier<ExecutorService> executorFactory) {
         this.processEngine = processEngine;
-        this.concurrencyLimiter = new Semaphore(Math.max(1, maxConcurrency));
+        this.concurrencyLimiter = concurrencyLimiter;
+        this.executorFactory = executorFactory;
     }
 
     @PostMapping("/performance-test")
     public ResponseEntity<PerformanceTestResponse> runTest(@RequestBody PerformanceTestRequest request) {
         String processId = request.processDefinitionId();
-        int count = Math.min(Math.max(request.count(), 1), 100_000);
+        int count = Math.clamp(request.count(), 1, 100_000);
 
         long startMs = System.currentTimeMillis();
         AtomicInteger completed = new AtomicInteger(0);
 
-        try (ExecutorService executor = Executors.newVirtualThreadPerTaskExecutor()) {
+        try (ExecutorService executor = executorFactory.get()) {
             for (int i = 0; i < count; i++) {
                 executor.submit(() -> {
                     try {
@@ -56,7 +72,7 @@ public class PerformanceTestController {
                         }
                     } catch (InterruptedException e) {
                         Thread.currentThread().interrupt();
-                        throw new RuntimeException(e);
+                        throw new IllegalStateException("Performance test interrupted", e);
                     }
                 });
             }

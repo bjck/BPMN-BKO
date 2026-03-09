@@ -13,7 +13,6 @@ import java.util.List;
 import java.util.Map;
 import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
-import java.util.concurrent.atomic.AtomicInteger;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
@@ -87,4 +86,35 @@ class JpaProcessInstanceStorageActiveHistoryTest {
         assertThat(page1.page()).isEqualTo(1);
         assertThat(page1.pageSize()).isEqualTo(50);
     }
+
+    @Test
+    void findAllPage_page2IncludesHistoryWhenActiveFillsPage1() {
+        UUID completedId = UUID.randomUUID();
+        ProcessInstance completed = new ProcessInstance(
+                completedId,
+                "P1",
+                new ConcurrentHashMap<>(Map.of()),
+                new Completed(completedId),
+                Instant.now().minusSeconds(60),
+                Instant.now()
+        );
+        storage.save(completed, Map.of());
+
+        UUID activeId = UUID.randomUUID();
+        ProcessInstance active = new ProcessInstance(
+                activeId,
+                "P1",
+                new ConcurrentHashMap<>(Map.of()),
+                new Active(activeId, "T1"),
+                Instant.now().minusSeconds(10),
+                null
+        );
+        storage.save(active, Map.of());
+
+        ProcessInstanceStorage.InstancePage page2 = storage.findAllPage(2, 1);
+        assertThat(page2.instances()).hasSize(1);
+        assertThat(page2.totalCount()).isGreaterThanOrEqualTo(2);
+        // Exercises history pagination path; DB shared across tests so we cannot assert specific IDs
+    }
+
 }

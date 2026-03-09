@@ -1,7 +1,12 @@
 package com.bko.bpmn_engine.engine;
 
+import com.bko.bpmn_engine.api.exception.IllegalStateTransitionException;
+import com.bko.bpmn_engine.api.exception.ProcessNotFoundException;
 import com.bko.bpmn_engine.engine.event.*;
+import com.bko.bpmn_engine.engine.kafka.BpmnEventPayload;
+import com.bko.bpmn_engine.engine.kafka.BpmnEventPublisher;
 import com.bko.bpmn_engine.model.*;
+import com.bko.bpmn_engine.storage.ProcessInstanceStorage;
 import com.bko.bpmn_engine.parser.BpmnParser;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -21,6 +26,8 @@ import java.util.UUID;
 import java.util.concurrent.atomic.AtomicReference;
 
 import static org.junit.jupiter.api.Assertions.*;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.Mockito.*;
 
 class ProcessEngineTest {
 
@@ -452,6 +459,587 @@ class ProcessEngineTest {
         assertTrue(instance.state() instanceof Completed);
     }
 
+    @Test
+    void messageEndEvent_withBpmnEventPublisher_publishesToKafka() throws Exception {
+        BpmnEventPublisher eventPublisher = mock(BpmnEventPublisher.class);
+        ProcessEngine pubEngine = new ProcessEngine(parser, new NoOpEventPublisher(), null, null, null, eventPublisher, null, null);
+        pubEngine.registerWorker("java", vars -> Map.of());
+
+        String xml = """
+                <?xml version="1.0" encoding="UTF-8"?>
+                <bpmn:definitions xmlns:bpmn="http://www.omg.org/spec/BPMN/20100524/MODEL"
+                                  xmlns:engine="https://bko.dev/schema/bpmn-engine/1.0">
+                  <bpmn:process id="Process_MessageEnd" name="Message End">
+                    <bpmn:startEvent id="Start_1"><bpmn:outgoing>Flow_1</bpmn:outgoing></bpmn:startEvent>
+                    <bpmn:serviceTask id="Task_1" implementation="java">
+                      <bpmn:incoming>Flow_1</bpmn:incoming><bpmn:outgoing>Flow_2</bpmn:outgoing>
+                    </bpmn:serviceTask>
+                    <bpmn:endEvent id="End_1" engine:messageRef="OrderComplete">
+                      <bpmn:incoming>Flow_2</bpmn:incoming>
+                    </bpmn:endEvent>
+                    <bpmn:sequenceFlow id="Flow_1" sourceRef="Start_1" targetRef="Task_1"/>
+                    <bpmn:sequenceFlow id="Flow_2" sourceRef="Task_1" targetRef="End_1"/>
+                  </bpmn:process>
+                </bpmn:definitions>
+                """;
+        String defId = pubEngine.deployProcess(xml);
+        ProcessInstance instance = pubEngine.createInstance(defId, Map.of("correlationKey", "corr-123"));
+
+        assertTrue(instance.state() instanceof Completed);
+        verify(eventPublisher).publish(argThat((BpmnEventPayload p) ->
+                "OrderComplete".equals(p.messageRef())
+                        && "corr-123".equals(p.correlationKey())
+                        && p.instanceId() != null
+                        && "End_1".equals(p.nodeId())
+        ));
+    }
+
+    @Test
+    void restServiceTask_withBasicAuth_sendsAuthorizationHeader() throws Exception {
+        AtomicReference<String> authHeader = new AtomicReference<>();
+        HttpServer server = HttpServer.create(new InetSocketAddress(0), 0);
+        server.createContext("/api", exchange -> {
+            authHeader.set(exchange.getRequestHeaders().getFirst("Authorization"));
+            byte[] body = "{\"ok\":true}".getBytes(StandardCharsets.UTF_8);
+            exchange.getResponseHeaders().add("Content-Type", "application/json");
+            exchange.sendResponseHeaders(200, body.length);
+            exchange.getResponseBody().write(body);
+            exchange.close();
+        });
+        server.start();
+
+        try {
+            int port = server.getAddress().getPort();
+            String xml = """
+                    <?xml version="1.0" encoding="UTF-8"?>
+                    <bpmn:definitions xmlns:bpmn="http://www.omg.org/spec/BPMN/20100524/MODEL"
+                                      xmlns:engine="https://bko.dev/schema/bpmn-engine/1.0">
+                      <bpmn:process id="Rest_Basic" name="REST Basic">
+                        <bpmn:startEvent id="Start"><bpmn:outgoing>F1</bpmn:outgoing></bpmn:startEvent>
+                        <bpmn:serviceTask id="Call" implementation="rest">
+                          <bpmn:incoming>F1</bpmn:incoming><bpmn:outgoing>F2</bpmn:outgoing>
+                          <bpmn:extensionElements>
+                            <engine:taskConfiguration type="rest"
+                                                      url="http://localhost:%d/api"
+                                                      authenticationType="basic"
+                                                      username="user"
+                                                      password="pass"/>
+                          </bpmn:extensionElements>
+                        </bpmn:serviceTask>
+                        <bpmn:endEvent id="End"><bpmn:incoming>F2</bpmn:incoming></bpmn:endEvent>
+                        <bpmn:sequenceFlow id="F1" sourceRef="Start" targetRef="Call"/>
+                        <bpmn:sequenceFlow id="F2" sourceRef="Call" targetRef="End"/>
+                      </bpmn:process>
+                    </bpmn:definitions>
+                    """.formatted(port);
+
+            String defId = engine.deployProcess(xml);
+            ProcessInstance instance = engine.createInstance(defId, Map.of());
+
+            assertTrue(instance.state() instanceof Completed);
+            assertNotNull(authHeader.get());
+            assertTrue(authHeader.get().startsWith("Basic "));
+        } finally {
+            server.stop(0);
+        }
+    }
+
+    @Test
+    void restServiceTask_withApiKeyInQuery_addsApiKeyToUrl() throws Exception {
+        AtomicReference<String> requestUri = new AtomicReference<>();
+        HttpServer server = HttpServer.create(new InetSocketAddress(0), 0);
+        server.createContext("/api", exchange -> {
+            requestUri.set(exchange.getRequestURI().toString());
+            byte[] body = "{\"ok\":true}".getBytes(StandardCharsets.UTF_8);
+            exchange.getResponseHeaders().add("Content-Type", "application/json");
+            exchange.sendResponseHeaders(200, body.length);
+            exchange.getResponseBody().write(body);
+            exchange.close();
+        });
+        server.start();
+
+        try {
+            int port = server.getAddress().getPort();
+            String xml = """
+                    <?xml version="1.0" encoding="UTF-8"?>
+                    <bpmn:definitions xmlns:bpmn="http://www.omg.org/spec/BPMN/20100524/MODEL"
+                                      xmlns:engine="https://bko.dev/schema/bpmn-engine/1.0">
+                      <bpmn:process id="Rest_ApiKey" name="REST ApiKey">
+                        <bpmn:startEvent id="Start"><bpmn:outgoing>F1</bpmn:outgoing></bpmn:startEvent>
+                        <bpmn:serviceTask id="Call" implementation="rest">
+                          <bpmn:incoming>F1</bpmn:incoming><bpmn:outgoing>F2</bpmn:outgoing>
+                          <bpmn:extensionElements>
+                            <engine:taskConfiguration type="rest"
+                                                      url="http://localhost:%d/api"
+                                                      authenticationType="apikey"
+                                                      apiKeyName="X-API-Key"
+                                                      apiKeyValue="= apiKey"
+                                                      apiKeyLocation="query"/>
+                          </bpmn:extensionElements>
+                        </bpmn:serviceTask>
+                        <bpmn:endEvent id="End"><bpmn:incoming>F2</bpmn:incoming></bpmn:endEvent>
+                        <bpmn:sequenceFlow id="F1" sourceRef="Start" targetRef="Call"/>
+                        <bpmn:sequenceFlow id="F2" sourceRef="Call" targetRef="End"/>
+                      </bpmn:process>
+                    </bpmn:definitions>
+                    """.formatted(port);
+
+            String defId = engine.deployProcess(xml);
+            ProcessInstance instance = engine.createInstance(defId, Map.of("apiKey", "secret-123"));
+
+            assertTrue(instance.state() instanceof Completed);
+            assertNotNull(requestUri.get());
+            assertTrue(requestUri.get().contains("X-API-Key") || requestUri.get().contains("secret-123"),
+                    "Expected API key in query: " + requestUri.get());
+        } finally {
+            server.stop(0);
+        }
+    }
+
+    @Test
+    void createInstance_processNotFound_throwsProcessNotFoundException() {
+        assertThrows(ProcessNotFoundException.class, () -> engine.createInstance("NonExistent", Map.of()));
+    }
+
+    @Test
+    void getBpmnXml_noDiagramEdges_returnsSerializedWithDiagram() throws Exception {
+        String xmlNoDiagram = """
+                <?xml version="1.0" encoding="UTF-8"?>
+                <bpmn:definitions xmlns:bpmn="http://www.omg.org/spec/BPMN/20100524/MODEL">
+                  <bpmn:process id="Process_NoDiagram" name="No Diagram">
+                    <bpmn:startEvent id="Start"><bpmn:outgoing>F1</bpmn:outgoing></bpmn:startEvent>
+                    <bpmn:serviceTask id="T1" implementation="java">
+                      <bpmn:incoming>F1</bpmn:incoming><bpmn:outgoing>F2</bpmn:outgoing>
+                    </bpmn:serviceTask>
+                    <bpmn:endEvent id="End"><bpmn:incoming>F2</bpmn:incoming></bpmn:endEvent>
+                    <bpmn:sequenceFlow id="F1" sourceRef="Start" targetRef="T1"/>
+                    <bpmn:sequenceFlow id="F2" sourceRef="T1" targetRef="End"/>
+                  </bpmn:process>
+                </bpmn:definitions>
+                """;
+        String defId = engine.deployProcess(xmlNoDiagram);
+        String result = engine.getBpmnXml(defId);
+        assertNotNull(result);
+        assertTrue(result.contains("BPMNEdge") || result.contains("bpmnEdge"), "Should contain diagram edges: " + result);
+    }
+
+    @Test
+    void getBpmnXml_unknownProcess_returnsNull() {
+        assertNull(engine.getBpmnXml("Unknown"));
+    }
+
+    @Test
+    void triggerMessageStart_notMessageStartProcess_throwsIllegalArgumentException() throws Exception {
+        String xml = loadFixture("minimal.bpmn");
+        String defId = engine.deployProcess(xml);
+        assertThrows(IllegalArgumentException.class,
+                () -> engine.triggerMessageStart(defId, "SomeMessage", null, Map.of()));
+    }
+
+    @Test
+    void completeTask_userTask_advancesToNextNode() throws Exception {
+        String xml = """
+                <?xml version="1.0" encoding="UTF-8"?>
+                <bpmn:definitions xmlns:bpmn="http://www.omg.org/spec/BPMN/20100524/MODEL">
+                  <bpmn:process id="Process_UserTask" name="User Task">
+                    <bpmn:startEvent id="Start"><bpmn:outgoing>F1</bpmn:outgoing></bpmn:startEvent>
+                    <bpmn:userTask id="UT1" name="Approve">
+                      <bpmn:incoming>F1</bpmn:incoming><bpmn:outgoing>F2</bpmn:outgoing>
+                    </bpmn:userTask>
+                    <bpmn:serviceTask id="T1" implementation="java">
+                      <bpmn:incoming>F2</bpmn:incoming><bpmn:outgoing>F3</bpmn:outgoing>
+                    </bpmn:serviceTask>
+                    <bpmn:endEvent id="End"><bpmn:incoming>F3</bpmn:incoming></bpmn:endEvent>
+                    <bpmn:sequenceFlow id="F1" sourceRef="Start" targetRef="UT1"/>
+                    <bpmn:sequenceFlow id="F2" sourceRef="UT1" targetRef="T1"/>
+                    <bpmn:sequenceFlow id="F3" sourceRef="T1" targetRef="End"/>
+                  </bpmn:process>
+                </bpmn:definitions>
+                """;
+        engine.deployProcess(xml);
+        engine.registerWorker("java", vars -> Map.of());
+        ProcessInstance instance = engine.createInstance("Process_UserTask", Map.of());
+        assertTrue(instance.state() instanceof Active);
+        ProcessInstance completed = engine.completeTask(instance.instanceId(), "UT1", Map.of("approved", true));
+        assertNotNull(completed);
+        ProcessInstance finalInstance = engine.getInstance(instance.instanceId());
+        assertTrue(finalInstance.state() instanceof Completed);
+    }
+
+    @Test
+    void completeTask_alreadyCompleted_throwsIllegalStateTransitionException() throws Exception {
+        String xml = loadFixture("minimal.bpmn");
+        engine.deployProcess(xml);
+        engine.registerWorker("java", vars -> Map.of());
+        ProcessInstance instance = engine.createInstance("Process_Minimal", Map.of());
+        assertTrue(instance.state() instanceof Completed);
+        assertThrows(IllegalStateTransitionException.class,
+                () -> engine.completeTask(instance.instanceId(), "Task_1", Map.of()));
+    }
+
+    @Test
+    void completeTask_instanceNotFound_throwsProcessNotFoundException() {
+        assertThrows(ProcessNotFoundException.class,
+                () -> engine.completeTask(UUID.randomUUID(), "Task_1", Map.of()));
+    }
+
+    @Test
+    void cancelInstance_instanceNotFound_throwsProcessNotFoundException() {
+        assertThrows(ProcessNotFoundException.class, () -> engine.cancelInstance(UUID.randomUUID()));
+    }
+
+    @Test
+    void cancelInstance_alreadyCompleted_throwsIllegalStateTransitionException() throws Exception {
+        String xml = loadFixture("minimal.bpmn");
+        engine.deployProcess(xml);
+        engine.registerWorker("java", vars -> Map.of());
+        ProcessInstance instance = engine.createInstance("Process_Minimal", Map.of());
+        assertTrue(instance.state() instanceof Completed);
+        assertThrows(IllegalStateTransitionException.class, () -> engine.cancelInstance(instance.instanceId()));
+    }
+
+    @Test
+    void cancelInstance_activeInstance_removesFromActive() throws Exception {
+        String xml = """
+                <?xml version="1.0" encoding="UTF-8"?>
+                <bpmn:definitions xmlns:bpmn="http://www.omg.org/spec/BPMN/20100524/MODEL">
+                  <bpmn:process id="P_Cancel" name="Cancel">
+                    <bpmn:startEvent id="Start"><bpmn:outgoing>F1</bpmn:outgoing></bpmn:startEvent>
+                    <bpmn:userTask id="UT1"><bpmn:incoming>F1</bpmn:incoming><bpmn:outgoing>F2</bpmn:outgoing></bpmn:userTask>
+                    <bpmn:endEvent id="End"><bpmn:incoming>F2</bpmn:incoming></bpmn:endEvent>
+                    <bpmn:sequenceFlow id="F1" sourceRef="Start" targetRef="UT1"/>
+                    <bpmn:sequenceFlow id="F2" sourceRef="UT1" targetRef="End"/>
+                  </bpmn:process>
+                </bpmn:definitions>
+                """;
+        engine.deployProcess(xml);
+        ProcessInstance instance = engine.createInstance("P_Cancel", Map.of());
+        assertTrue(instance.state() instanceof Active);
+        engine.cancelInstance(instance.instanceId());
+        assertNull(engine.getInstance(instance.instanceId()));
+    }
+
+    @Test
+    void errorEndEvent_withBpmnEventPublisher_publishesErrorPayload() throws Exception {
+        BpmnEventPublisher eventPublisher = mock(BpmnEventPublisher.class);
+        ProcessEngine pubEngine = new ProcessEngine(parser, new NoOpEventPublisher(), null, null, null, eventPublisher, null, null);
+        pubEngine.registerWorker("java", vars -> Map.of());
+
+        String xml = """
+                <?xml version="1.0" encoding="UTF-8"?>
+                <bpmn:definitions xmlns:bpmn="http://www.omg.org/spec/BPMN/20100524/MODEL"
+                                  xmlns:engine="https://bko.dev/schema/bpmn-engine/1.0">
+                  <bpmn:process id="Process_ErrorEnd" name="Error End">
+                    <bpmn:startEvent id="Start"><bpmn:outgoing>F1</bpmn:outgoing></bpmn:startEvent>
+                    <bpmn:serviceTask id="T1" implementation="java">
+                      <bpmn:incoming>F1</bpmn:incoming><bpmn:outgoing>F2</bpmn:outgoing>
+                    </bpmn:serviceTask>
+                    <bpmn:endEvent id="End_1" engine:errorCode="ERR_001">
+                      <bpmn:incoming>F2</bpmn:incoming>
+                    </bpmn:endEvent>
+                    <bpmn:sequenceFlow id="F1" sourceRef="Start" targetRef="T1"/>
+                    <bpmn:sequenceFlow id="F2" sourceRef="T1" targetRef="End_1"/>
+                  </bpmn:process>
+                </bpmn:definitions>
+                """;
+        String defId = pubEngine.deployProcess(xml);
+        ProcessInstance instance = pubEngine.createInstance(defId, Map.of("correlationKey", "c1"));
+
+        assertTrue(instance.state() instanceof Completed);
+        verify(eventPublisher).publish(argThat((BpmnEventPayload p) ->
+                "ERR_001".equals(p.errorCode()) && "c1".equals(p.correlationKey())));
+    }
+
+    @Test
+    void triggerCatchEventByMessageRef_triggersWaitingSubscription() throws Exception {
+        String xml = """
+                <?xml version="1.0" encoding="UTF-8"?>
+                <bpmn:definitions xmlns:bpmn="http://www.omg.org/spec/BPMN/20100524/MODEL"
+                                  xmlns:engine="https://bko.dev/schema/bpmn-engine/1.0">
+                  <bpmn:process id="Process_CatchMsg" name="Catch Msg">
+                    <bpmn:startEvent id="Start"><bpmn:outgoing>F1</bpmn:outgoing></bpmn:startEvent>
+                    <bpmn:serviceTask id="T1" implementation="java">
+                      <bpmn:incoming>F1</bpmn:incoming><bpmn:outgoing>F2</bpmn:outgoing>
+                    </bpmn:serviceTask>
+                    <bpmn:intermediateCatchEvent id="Catch_1" engine:messageRef="Reply">
+                      <bpmn:incoming>F2</bpmn:incoming><bpmn:outgoing>F3</bpmn:outgoing>
+                    </bpmn:intermediateCatchEvent>
+                    <bpmn:serviceTask id="T2" implementation="java">
+                      <bpmn:incoming>F3</bpmn:incoming><bpmn:outgoing>F4</bpmn:outgoing>
+                    </bpmn:serviceTask>
+                    <bpmn:endEvent id="End"><bpmn:incoming>F4</bpmn:incoming></bpmn:endEvent>
+                    <bpmn:sequenceFlow id="F1" sourceRef="Start" targetRef="T1"/>
+                    <bpmn:sequenceFlow id="F2" sourceRef="T1" targetRef="Catch_1"/>
+                    <bpmn:sequenceFlow id="F3" sourceRef="Catch_1" targetRef="T2"/>
+                    <bpmn:sequenceFlow id="F4" sourceRef="T2" targetRef="End"/>
+                  </bpmn:process>
+                </bpmn:definitions>
+                """;
+        List<String> activated = new ArrayList<>();
+        ProcessEngine catchEngine = new ProcessEngine(parser, new EventCollector(activated), null, null, null, null, null, null);
+        catchEngine.deployProcess(xml);
+        catchEngine.registerWorker("java", vars -> Map.of());
+
+        ProcessInstance instance = catchEngine.createInstance("Process_CatchMsg", Map.of("correlationKey", "corr-x"));
+        assertTrue(instance.state() instanceof Active);
+
+        catchEngine.triggerCatchEventByMessageRef("Reply", "corr-x", Map.of("payload", "done"));
+
+        ProcessInstance after = catchEngine.getInstance(instance.instanceId());
+        assertNotNull(after);
+        assertTrue(after.state() instanceof Completed);
+        assertEquals("done", after.variables().get("payload"));
+    }
+
+    @Test
+    void restartFailedInstance_restartsFromFailedNode() throws Exception {
+        String xml = """
+                <?xml version="1.0" encoding="UTF-8"?>
+                <bpmn:definitions xmlns:bpmn="http://www.omg.org/spec/BPMN/20100524/MODEL">
+                  <bpmn:process id="P_Restart" name="Restart">
+                    <bpmn:startEvent id="Start"><bpmn:outgoing>F1</bpmn:outgoing></bpmn:startEvent>
+                    <bpmn:serviceTask id="T1" implementation="fail">
+                      <bpmn:incoming>F1</bpmn:incoming><bpmn:outgoing>F2</bpmn:outgoing>
+                    </bpmn:serviceTask>
+                    <bpmn:serviceTask id="T2" implementation="java">
+                      <bpmn:incoming>F2</bpmn:incoming><bpmn:outgoing>F3</bpmn:outgoing>
+                    </bpmn:serviceTask>
+                    <bpmn:endEvent id="End"><bpmn:incoming>F3</bpmn:incoming></bpmn:endEvent>
+                    <bpmn:sequenceFlow id="F1" sourceRef="Start" targetRef="T1"/>
+                    <bpmn:sequenceFlow id="F2" sourceRef="T1" targetRef="T2"/>
+                    <bpmn:sequenceFlow id="F3" sourceRef="T2" targetRef="End"/>
+                  </bpmn:process>
+                </bpmn:definitions>
+                """;
+        engine.deployProcess(xml);
+        engine.registerWorker("java", vars -> Map.of());
+        engine.registerWorker("fail", vars -> { throw new RuntimeException("Simulated failure"); });
+
+        UUID instanceId = null;
+        try {
+            engine.createInstance("P_Restart", Map.of());
+            fail("Expected exception from failing task");
+        } catch (RuntimeException e) {
+            assertTrue(e.getMessage().contains("Simulated failure"));
+            instanceId = engine.getAllInstances().stream()
+                    .filter(i -> i.state() instanceof Failed)
+                    .findFirst().orElseThrow().instanceId();
+        }
+        assertNotNull(instanceId);
+        ProcessInstance failed = engine.getInstance(instanceId);
+        assertNotNull(failed);
+        assertTrue(failed.state() instanceof Failed);
+
+        engine.registerWorker("fail", vars -> Map.of("recovered", true));
+        ProcessInstance restarted = engine.restartFailedInstance(instanceId);
+        assertNotNull(restarted);
+        ProcessInstance finalInstance = engine.getInstance(instanceId);
+        assertTrue(finalInstance.state() instanceof Completed);
+        assertEquals(Boolean.TRUE, finalInstance.variables().get("recovered"));
+    }
+
+    @Test
+    void restartFailedInstance_instanceNotFound_throwsProcessNotFoundException() {
+        assertThrows(ProcessNotFoundException.class, () -> engine.restartFailedInstance(UUID.randomUUID()));
+    }
+
+    @Test
+    void restartFailedInstance_notFailed_throwsIllegalStateTransitionException() throws Exception {
+        String xml = loadFixture("minimal.bpmn");
+        engine.deployProcess(xml);
+        engine.registerWorker("java", vars -> Map.of());
+        ProcessInstance instance = engine.createInstance("Process_Minimal", Map.of());
+        assertTrue(instance.state() instanceof Completed);
+        assertThrows(IllegalStateTransitionException.class, () -> engine.restartFailedInstance(instance.instanceId()));
+    }
+
+    @Test
+    void getDeployedProcessIds_returnsDeployedIds() throws Exception {
+        String xml = loadFixture("minimal.bpmn");
+        engine.deployProcess(xml);
+        assertTrue(engine.getDeployedProcessIds().contains("Process_Minimal"));
+    }
+
+    @Test
+    void getActiveInstanceCount_returnsCorrectCount() throws Exception {
+        String xml = """
+                <?xml version="1.0" encoding="UTF-8"?>
+                <bpmn:definitions xmlns:bpmn="http://www.omg.org/spec/BPMN/20100524/MODEL">
+                  <bpmn:process id="P_Count" name="Count">
+                    <bpmn:startEvent id="Start"><bpmn:outgoing>F1</bpmn:outgoing></bpmn:startEvent>
+                    <bpmn:userTask id="UT1"><bpmn:incoming>F1</bpmn:incoming><bpmn:outgoing>F2</bpmn:outgoing></bpmn:userTask>
+                    <bpmn:endEvent id="End"><bpmn:incoming>F2</bpmn:incoming></bpmn:endEvent>
+                    <bpmn:sequenceFlow id="F1" sourceRef="Start" targetRef="UT1"/>
+                    <bpmn:sequenceFlow id="F2" sourceRef="UT1" targetRef="End"/>
+                  </bpmn:process>
+                </bpmn:definitions>
+                """;
+        engine.deployProcess(xml);
+        assertEquals(0, engine.getActiveInstanceCount());
+        ProcessInstance i1 = engine.createInstance("P_Count", Map.of());
+        assertEquals(1, engine.getActiveInstanceCount());
+        ProcessInstance i2 = engine.createInstance("P_Count", Map.of());
+        assertEquals(2, engine.getActiveInstanceCount());
+        engine.completeTask(i1.instanceId(), "UT1", Map.of());
+        assertEquals(1, engine.getActiveInstanceCount());
+        engine.completeTask(i2.instanceId(), "UT1", Map.of());
+        assertEquals(0, engine.getActiveInstanceCount());
+    }
+
+    @Test
+    void getInstancesPage_withoutStorage_returnsInMemoryPage() throws Exception {
+        String xml = loadFixture("minimal.bpmn");
+        engine.deployProcess(xml);
+        engine.registerWorker("java", vars -> Map.of());
+        engine.createInstance("Process_Minimal", Map.of());
+        engine.createInstance("Process_Minimal", Map.of());
+
+        var page = engine.getInstancesPage(1, 10);
+        assertNotNull(page);
+        assertTrue(page.instances().size() >= 2);
+        assertEquals(1, page.page());
+        assertEquals(10, page.pageSize());
+        assertTrue(page.totalCount() >= 2);
+    }
+
+    @Test
+    void getAllInstances_withoutStorage_returnsActiveAndCompleted() throws Exception {
+        String xml = loadFixture("minimal.bpmn");
+        engine.deployProcess(xml);
+        engine.registerWorker("java", vars -> Map.of());
+        engine.createInstance("Process_Minimal", Map.of());
+
+        var all = engine.getAllInstances();
+        assertNotNull(all);
+        assertTrue(all.isEmpty() || all.stream().anyMatch(i -> i.state() instanceof Completed));
+    }
+
+    @Test
+    void getPendingUserTaskId_whenNotUserTask_returnsNull() throws Exception {
+        String xml = loadFixture("minimal.bpmn");
+        engine.deployProcess(xml);
+        engine.registerWorker("java", vars -> Map.of());
+        ProcessInstance instance = engine.createInstance("Process_Minimal", Map.of());
+        assertTrue(instance.state() instanceof Completed);
+        assertNull(engine.getPendingUserTaskId(instance));
+    }
+
+    @Test
+    void getPendingUserTaskId_whenActiveAtUserTask_returnsTaskId() throws Exception {
+        String xml = """
+                <?xml version="1.0" encoding="UTF-8"?>
+                <bpmn:definitions xmlns:bpmn="http://www.omg.org/spec/BPMN/20100524/MODEL">
+                  <bpmn:process id="P_UT" name="User Task">
+                    <bpmn:startEvent id="Start"><bpmn:outgoing>F1</bpmn:outgoing></bpmn:startEvent>
+                    <bpmn:userTask id="UT1" name="Approve"><bpmn:incoming>F1</bpmn:incoming><bpmn:outgoing>F2</bpmn:outgoing></bpmn:userTask>
+                    <bpmn:endEvent id="End"><bpmn:incoming>F2</bpmn:incoming></bpmn:endEvent>
+                    <bpmn:sequenceFlow id="F1" sourceRef="Start" targetRef="UT1"/>
+                    <bpmn:sequenceFlow id="F2" sourceRef="UT1" targetRef="End"/>
+                  </bpmn:process>
+                </bpmn:definitions>
+                """;
+        engine.deployProcess(xml);
+        ProcessInstance instance = engine.createInstance("P_UT", Map.of());
+        assertTrue(instance.state() instanceof Active);
+        assertEquals("UT1", engine.getPendingUserTaskId(instance));
+    }
+
+    @Test
+    void workerTask_withNoWorkerRegistered_returnsEmptyMap() throws Exception {
+        String xml = """
+                <?xml version="1.0" encoding="UTF-8"?>
+                <bpmn:definitions xmlns:bpmn="http://www.omg.org/spec/BPMN/20100524/MODEL">
+                  <bpmn:process id="P_NoWorker" name="No Worker">
+                    <bpmn:startEvent id="Start"><bpmn:outgoing>F1</bpmn:outgoing></bpmn:startEvent>
+                    <bpmn:serviceTask id="T1" implementation="unregistered">
+                      <bpmn:incoming>F1</bpmn:incoming><bpmn:outgoing>F2</bpmn:outgoing>
+                    </bpmn:serviceTask>
+                    <bpmn:endEvent id="End"><bpmn:incoming>F2</bpmn:incoming></bpmn:endEvent>
+                    <bpmn:sequenceFlow id="F1" sourceRef="Start" targetRef="T1"/>
+                    <bpmn:sequenceFlow id="F2" sourceRef="T1" targetRef="End"/>
+                  </bpmn:process>
+                </bpmn:definitions>
+                """;
+        engine.deployProcess(xml);
+        ProcessInstance instance = engine.createInstance("P_NoWorker", Map.of());
+        assertTrue(instance.state() instanceof Completed);
+    }
+
+    @Test
+    void restartFailedInstance_missingFailedAtNodeId_throwsIllegalStateTransitionException() throws Exception {
+        engine.registerWorker("fail", vars -> { throw new RuntimeException("fail"); });
+        String failXml = """
+                <?xml version="1.0" encoding="UTF-8"?>
+                <bpmn:definitions xmlns:bpmn="http://www.omg.org/spec/BPMN/20100524/MODEL">
+                  <bpmn:process id="P_Fail" name="Fail">
+                    <bpmn:startEvent id="Start"><bpmn:outgoing>F1</bpmn:outgoing></bpmn:startEvent>
+                    <bpmn:serviceTask id="T1" implementation="fail">
+                      <bpmn:incoming>F1</bpmn:incoming><bpmn:outgoing>F2</bpmn:outgoing>
+                    </bpmn:serviceTask>
+                    <bpmn:endEvent id="End"><bpmn:incoming>F2</bpmn:incoming></bpmn:endEvent>
+                    <bpmn:sequenceFlow id="F1" sourceRef="Start" targetRef="T1"/>
+                    <bpmn:sequenceFlow id="F2" sourceRef="T1" targetRef="End"/>
+                  </bpmn:process>
+                </bpmn:definitions>
+                """;
+        engine.deployProcess(failXml);
+        try {
+            engine.createInstance("P_Fail", Map.of());
+        } catch (RuntimeException ignored) {}
+        UUID failedId = engine.getAllInstances().stream()
+                .filter(i -> i.state() instanceof Failed)
+                .findFirst().orElseThrow().instanceId();
+        ProcessInstance failed = engine.getInstance(failedId);
+        failed.variables().put("failedAtNodeId", "");
+        assertThrows(IllegalStateTransitionException.class,
+                () -> engine.restartFailedInstance(failedId));
+    }
+
+    @Test
+    void intermediateThrowEvent_withSignalRef_usesBpmnEventPublisher() throws Exception {
+        BpmnEventPublisher eventPublisher = mock(BpmnEventPublisher.class);
+        ProcessEngine pubEngine = new ProcessEngine(parser, new NoOpEventPublisher(), null, null, null, eventPublisher, null, null);
+
+        String xml = """
+                <?xml version="1.0" encoding="UTF-8"?>
+                <bpmn:definitions xmlns:bpmn="http://www.omg.org/spec/BPMN/20100524/MODEL"
+                                  xmlns:engine="https://bko.dev/schema/bpmn-engine/1.0">
+                  <bpmn:process id="Process_Signal" name="Signal">
+                    <bpmn:startEvent id="Start"><bpmn:outgoing>F1</bpmn:outgoing></bpmn:startEvent>
+                    <bpmn:intermediateThrowEvent id="Throw_1" engine:signalRef="MySignal">
+                      <bpmn:incoming>F1</bpmn:incoming><bpmn:outgoing>F2</bpmn:outgoing>
+                    </bpmn:intermediateThrowEvent>
+                    <bpmn:endEvent id="End"><bpmn:incoming>F2</bpmn:incoming></bpmn:endEvent>
+                    <bpmn:sequenceFlow id="F1" sourceRef="Start" targetRef="Throw_1"/>
+                    <bpmn:sequenceFlow id="F2" sourceRef="Throw_1" targetRef="End"/>
+                  </bpmn:process>
+                </bpmn:definitions>
+                """;
+        pubEngine.deployProcess(xml);
+        ProcessInstance instance = pubEngine.createInstance("Process_Signal", Map.of());
+        assertTrue(instance.state() instanceof Completed);
+        verify(eventPublisher).publish(argThat((BpmnEventPayload p) ->
+                "MySignal".equals(p.signalRef())));
+    }
+
+    @Test
+    void complexGateway_withActivationExpression_selectsBranches() throws Exception {
+        String xml = loadFixture("all_gateways.bpmn");
+        String defId = engine.deployProcess(xml);
+        engine.registerWorker("java", vars -> Map.of());
+
+        Map<String, Object> vars = Map.<String, Object>of(
+                "useXorYes", true,
+                "chosenFlow", "Flow_complex_1",
+                "useEvOk", true
+        );
+
+        ProcessInstance instance = engine.createInstance(defId, vars);
+
+        assertNotNull(instance);
+        assertTrue(instance.state() instanceof Completed);
+    }
+
     private static void respondWithJson(HttpExchange exchange, AtomicReference<String> authHeader, AtomicReference<String> requestBody) throws java.io.IOException {
         authHeader.set(exchange.getRequestHeaders().getFirst("Authorization"));
         requestBody.set(new String(exchange.getRequestBody().readAllBytes(), StandardCharsets.UTF_8));
@@ -480,6 +1068,7 @@ class ProcessEngineTest {
     private static final class NoOpEventPublisher implements ApplicationEventPublisher {
         @Override
         public void publishEvent(Object event) {
+            // No-op for tests
         }
     }
 }
