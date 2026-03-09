@@ -1,6 +1,8 @@
 package com.bko.bpmn_engine.engine;
 
 import com.bko.bpmn_engine.model.Active;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import com.bko.bpmn_engine.model.ProcessInstance;
 import com.bko.bpmn_engine.storage.ProcessInstanceStorage;
 
@@ -15,6 +17,8 @@ import java.util.concurrent.atomic.AtomicInteger;
  * Used when persistence is enabled but checkpoint-via-Kafka is disabled.
  */
 public class JpaCheckpointSink implements CheckpointSink {
+
+    private static final Logger log = LoggerFactory.getLogger(JpaCheckpointSink.class);
 
     private final ProcessInstanceStorage instanceStorage;
 
@@ -40,6 +44,7 @@ public class JpaCheckpointSink implements CheckpointSink {
         }
         String nodeIdForEvent = currentNodeId != null ? currentNodeId
                 : (instance.state() instanceof Active a ? a.currentNodeId() : null);
+        log.trace("JPA checkpoint instanceId={} eventType={} currentNodeId={}", instance.instanceId(), eventType, nodeIdForEvent);
         instanceStorage.save(toSave, parallelJoinTokens);
         instanceStorage.saveEvent(
                 instance.instanceId(),

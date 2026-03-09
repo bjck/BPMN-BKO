@@ -21,6 +21,12 @@ bpmn:
     checkpoint-enabled: ${BPMN_KAFKA_CHECKPOINT_ENABLED:true}
     checkpoint-consumer-group: ${BPMN_KAFKA_CHECKPOINT_CONSUMER_GROUP:bpmn-engine-checkpoint-consumer}
 
+# Logging: use profile 'trace' or --logging.level.com.bko.bpmn_engine=TRACE for full execution tracing.
+logging:
+  level:
+    root: INFO
+    com.bko.bpmn_engine: DEBUG
+
 ai:
   gemini:
     api-key: ${GEMINI_API_KEY}

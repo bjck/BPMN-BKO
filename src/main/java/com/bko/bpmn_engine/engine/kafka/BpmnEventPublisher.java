@@ -43,6 +43,8 @@ public class BpmnEventPublisher {
                 : payload.errorCode() != null ? payload.errorCode()
                 : payload.instanceId() != null ? payload.instanceId().toString() : "bpmn-event";
         log.debug("Publishing BPMN event to {} key={} payload={}", topic, key, payload);
+        log.trace("BPMN event publish topic={} key={} messageRef={} signalRef={} instanceId={} nodeId={}",
+                topic, key, payload.messageRef(), payload.signalRef(), payload.instanceId(), payload.nodeId());
         return kafkaTemplate.send(topic, key, payload);
     }
 }

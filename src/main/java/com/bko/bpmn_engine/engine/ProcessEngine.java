@@ -1,6 +1,8 @@
 package com.bko.bpmn_engine.engine;
 
 import com.bko.bpmn_engine.api.exception.IllegalStateTransitionException;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import com.bko.bpmn_engine.api.exception.ProcessNotFoundException;
 import com.bko.bpmn_engine.engine.event.*;
 import com.bko.bpmn_engine.engine.kafka.BpmnEventPayload;
@@ -31,6 +33,8 @@ import java.util.concurrent.atomic.AtomicInteger;
  */
 @Service
 public class ProcessEngine {
+
+    private static final Logger log = LoggerFactory.getLogger(ProcessEngine.class);
 
     private final BpmnParser parser;
     private final ApplicationEventPublisher eventPublisher;
@@ -84,6 +88,7 @@ public class ProcessEngine {
     public String deployProcess(String bpmnXml) throws BpmnParseException {
         CompiledProcess compiled = parser.parse(bpmnXml);
         String definitionId = compiled.definition().id();
+        log.trace("Deploying process definitionId={} startNodeId={}", definitionId, compiled.definition().startNodeId());
         deployedProcesses.put(definitionId, compiled);
         bpmnXmlByDefinitionId.put(definitionId, bpmnXml);
         FlowNode startNode = compiled.definition().nodes().get(compiled.definition().startNodeId());
@@ -95,6 +100,7 @@ public class ProcessEngine {
         if (definitionStorage != null) {
             definitionStorage.save(definitionId, bpmnXml);
         }
+        log.trace("Deployed process definitionId={}", definitionId);
         return definitionId;
     }
 
@@ -149,6 +155,7 @@ public class ProcessEngine {
                 null
         );
 
+        log.trace("Creating instance instanceId={} processDefinitionId={} startNodeId={}", instanceId, processDefinitionId, compiled.definition().startNodeId());
         eventPublisher.publishEvent(new ProcessInstanceCreatedEvent(this, instanceId, processDefinitionId));
 
         ProcessInstance active = transitionTo(instance, new Active(instanceId, compiled.definition().startNodeId()));
@@ -158,6 +165,7 @@ public class ProcessEngine {
 
         StartEvent startEvent = compiled.definition().nodes().get(compiled.definition().startNodeId()) instanceof StartEvent s ? s : null;
         if (startEvent == null || startEvent.trigger() == StartEventTrigger.NONE) {
+            log.trace("Executing from start event instanceId={} nodeId={}", instanceId, compiled.definition().startNodeId());
             executeFrom(active, compiled.definition().startNodeId());
         }
 
@@ -187,6 +195,7 @@ public class ProcessEngine {
         eventPublisher.publishEvent(new ProcessInstanceCreatedEvent(this, instanceId, processDefinitionId));
         ProcessInstance active = transitionTo(instance, new Active(instanceId, compiled.definition().startNodeId()));
         activeInstances.put(instanceId, active);
+        log.trace("Message start instanceId={} processDefinitionId={} messageRef={} correlationKey={}", instanceId, processDefinitionId, messageRef, correlationKey);
         persistCheckpoint(active, "CREATED");
         executeFrom(active, compiled.definition().startNodeId());
         return activeInstances.getOrDefault(instanceId, completedInstances.getOrDefault(instanceId, active));
@@ -204,6 +213,7 @@ public class ProcessEngine {
      * Trigger a catch event: merge variables and advance the instance from the given node.
      */
     public void triggerCatchEvent(UUID instanceId, String nodeId, Map<String, Object> variables) {
+        log.trace("Triggering catch event instanceId={} nodeId={}", instanceId, nodeId);
         ProcessInstance instance = activeInstances.get(instanceId);
         if (instance == null) {
             throw new ProcessNotFoundException("Instance not found: " + instanceId);
@@ -250,17 +260,20 @@ public class ProcessEngine {
         ProcessInstance current = getCurrentInstance(instance.instanceId());
         if (current == null) return;
 
+        log.trace("Executing node instanceId={} nodeId={} nodeType={}", instance.instanceId(), nodeId, node.getClass().getSimpleName());
         switch (node) {
             case StartEvent start -> {
                 if (start.trigger() == StartEventTrigger.NONE || start.trigger() == StartEventTrigger.MESSAGE) {
                     List<String> next = compiled.adjacency().get(nodeId);
                     if (next != null && !next.isEmpty()) {
+                        log.trace("StartEvent advancing instanceId={} to next={}", current.instanceId(), next.getFirst());
                         advanceAndExecute(current, next.getFirst(), compiled);
                     }
                 }
                 // TIMER: advance when timer fires (scheduled or external trigger)
             }
             case EndEvent end -> {
+                log.trace("EndEvent reached instanceId={} nodeId={} endType={}", current.instanceId(), nodeId, end.endType());
                 if (bpmnEventPublisher != null) {
                     String correlationKey = current.variables().get("correlationKey") != null ? String.valueOf(current.variables().get("correlationKey")) : null;
                     if (end.endType() == EndEventType.MESSAGE && end.messageRef() != null) {
@@ -285,18 +298,22 @@ public class ProcessEngine {
             case ServiceTask st -> {
                 List<String> chain = findChainContaining(compiled, nodeId);
                 if (chain != null) {
+                    log.trace("ServiceTask chain instanceId={} taskId={} implementation={} chainSize={}", current.instanceId(), nodeId, st.implementation(), chain.size());
                     executeSequentialChain(getCurrentInstance(instance.instanceId()), chain, compiled);
                 } else {
+                    log.trace("ServiceTask single instanceId={} taskId={} implementation={}", current.instanceId(), nodeId, st.implementation());
                     executeServiceTask(getCurrentInstance(instance.instanceId()), st, compiled);
                 }
             }
             case ExclusiveGateway ex -> {
                 String targetId = selectConditionalBranch(ex.id(), ex.defaultFlow(), def, current.variables());
+                log.trace("ExclusiveGateway instanceId={} gatewayId={} selectedTarget={}", current.instanceId(), ex.id(), targetId);
                 if (targetId != null) {
                     advanceAndExecute(current, targetId, compiled);
                 }
             }
             case ParallelGateway pg -> {
+                log.trace("ParallelGateway instanceId={} gatewayId={} incomingCount={}", current.instanceId(), pg.id(), pg.incoming().size());
                 if (pg.incoming().size() > 1) {
                     int arrived = parallelJoinTokens
                             .computeIfAbsent(current.instanceId(), k -> new ConcurrentHashMap<>())
@@ -305,16 +322,19 @@ public class ProcessEngine {
                     if (arrived >= pg.incoming().size()) {
                         List<String> next = compiled.adjacency().get(nodeId);
                         if (next != null && !next.isEmpty()) {
+                            log.trace("ParallelGateway join complete instanceId={} advancing to {}", current.instanceId(), next.getFirst());
                             advanceAndExecute(current, next.getFirst(), compiled);
                         }
                     }
                 } else {
                     for (String nextId : compiled.adjacency().getOrDefault(nodeId, List.of())) {
+                        log.trace("ParallelGateway fork instanceId={} advancing to {}", current.instanceId(), nextId);
                         executeFrom(getCurrentInstance(instance.instanceId()), nextId);
                     }
                 }
             }
             case InclusiveGateway inc -> {
+                log.trace("InclusiveGateway instanceId={} gatewayId={} incomingCount={}", current.instanceId(), inc.id(), inc.incoming().size());
                 if (inc.incoming().size() > 1) {
                     // Join: wait for tokens. Simplified: fire when at least one token has arrived.
                     int arrived = parallelJoinTokens
@@ -338,21 +358,25 @@ public class ProcessEngine {
             }
             case ComplexGateway cg -> {
                 List<String> targetIds = selectComplexBranches(cg, def, current.variables());
+                log.trace("ComplexGateway instanceId={} gatewayId={} selectedTargets={}", current.instanceId(), cg.id(), targetIds);
                 for (String targetId : targetIds) {
                     advanceAndExecute(current, targetId, compiled);
                 }
             }
             case EventBasedGateway ev -> {
                 String targetId = selectConditionalBranch(ev.id(), ev.defaultFlow(), def, current.variables());
+                log.trace("EventBasedGateway instanceId={} gatewayId={} selectedTarget={}", current.instanceId(), ev.id(), targetId);
                 if (targetId != null) {
                     advanceAndExecute(current, targetId, compiled);
                 }
             }
             case UserTask ignored -> {
+                log.trace("UserTask reached instanceId={} nodeId={}", current.instanceId(), nodeId);
                 persistCheckpoint(current, "USER_TASK_REACHED");
                 // UserTask blocks until completeTask is called
             }
             case IntermediateCatchEvent ice -> {
+                log.trace("IntermediateCatchEvent instanceId={} nodeId={} catchType={}", current.instanceId(), nodeId, ice.catchType());
                 if (ice.catchType() == CatchEventType.MESSAGE && ice.messageRef() != null) {
                     String correlationKey = current.variables().get("correlationKey") != null ? String.valueOf(current.variables().get("correlationKey")) : null;
                     messageSubscriptions
@@ -379,6 +403,7 @@ public class ProcessEngine {
                 }
             }
             case IntermediateThrowEvent ite -> {
+                log.trace("IntermediateThrowEvent instanceId={} nodeId={} throwType={}", current.instanceId(), nodeId, ite.throwType());
                 if (bpmnEventPublisher != null) {
                     String correlationKey = current.variables().get("correlationKey") != null ? String.valueOf(current.variables().get("correlationKey")) : null;
                     if (ite.throwType() == ThrowEventType.MESSAGE && ite.messageRef() != null) {
@@ -432,6 +457,7 @@ public class ProcessEngine {
             FlowNode node = compiled.definition().nodes().get(taskId);
             if (node instanceof ServiceTask st) {
                 long startMs = System.currentTimeMillis();
+                log.trace("Task activated instanceId={} taskId={} implementation={}", current.instanceId(), taskId, st.implementation());
                 eventPublisher.publishEvent(new TaskActivatedEvent(this, current.instanceId(), taskId, st.implementation()));
                 try {
                     applyTaskResult(current, st, executeTask(st, current));
@@ -441,6 +467,7 @@ public class ProcessEngine {
                 }
 
                 long durationMs = System.currentTimeMillis() - startMs;
+                log.trace("Task completed instanceId={} taskId={} implementation={} durationMs={}", current.instanceId(), taskId, st.implementation(), durationMs);
                 recordTaskExecution(current.instanceId(), taskId, st.implementation(), startMs, durationMs);
                 eventPublisher.publishEvent(new TaskCompletedEvent(this, current.instanceId(), taskId, durationMs));
                 // Checkpoint after each task in the chain (currentNodeId = task just completed)
@@ -451,6 +478,7 @@ public class ProcessEngine {
         String lastInChain = chainNodeIds.getLast();
         List<String> next = compiled.adjacency().get(lastInChain);
         if (next != null && !next.isEmpty()) {
+            log.trace("Chain completed instanceId={} advancing to {}", current.instanceId(), next.getFirst());
             persistCheckpoint(current, "SERVICE_TASKS_COMPLETED");
             advanceAndExecute(current, next.getFirst(), compiled);
         }
@@ -465,6 +493,7 @@ public class ProcessEngine {
      * @return updated instance
      */
     public ProcessInstance completeTask(UUID instanceId, String taskId, Map<String, Object> variables) {
+        log.trace("Completing user task instanceId={} taskId={}", instanceId, taskId);
         ProcessInstance instance = activeInstances.get(instanceId);
         if (instance == null) {
             ProcessInstance completed = completedInstances.get(instanceId);
@@ -684,6 +713,7 @@ public class ProcessEngine {
         ProcessInstance current = getCurrentInstance(instance.instanceId());
         if (current == null) return;
 
+        log.trace("Advancing instanceId={} from {} to {}", current.instanceId(), current.state() instanceof Active a ? a.currentNodeId() : "?", nextNodeId);
         ProcessInstance withNode = transitionTo(current, new Active(current.instanceId(), nextNodeId));
         updateInstance(withNode);
 
@@ -695,6 +725,7 @@ public class ProcessEngine {
         if (current == null) return;
 
         long startMs = System.currentTimeMillis();
+        log.trace("Executing service task instanceId={} taskId={} implementation={} taskType={}", current.instanceId(), st.id(), st.implementation(), st.taskType());
         eventPublisher.publishEvent(new TaskActivatedEvent(this, current.instanceId(), st.id(), st.implementation()));
         try {
             applyTaskResult(current, st, executeTask(st, current));
@@ -704,6 +735,7 @@ public class ProcessEngine {
         }
 
         long durationMs = System.currentTimeMillis() - startMs;
+        log.trace("Service task completed instanceId={} taskId={} durationMs={}", current.instanceId(), st.id(), durationMs);
         recordTaskExecution(current.instanceId(), st.id(), st.implementation(), startMs, durationMs);
         eventPublisher.publishEvent(new TaskCompletedEvent(this, current.instanceId(), st.id(), durationMs));
 
@@ -716,6 +748,7 @@ public class ProcessEngine {
 
     private void failInstance(ProcessInstance current, Exception e) {
         String message = e.getMessage() != null ? e.getMessage() : e.getClass().getSimpleName();
+        log.trace("Instance failed instanceId={} message={} failedAtNodeId={}", current.instanceId(), message, current.state() instanceof Active a ? a.currentNodeId() : null);
         current.variables().put("errorMessage", message);
         if (current.state() instanceof Active a) {
             current.variables().put("failedAtNodeId", a.currentNodeId());
@@ -848,6 +881,7 @@ public class ProcessEngine {
                 : (instance.state() instanceof com.bko.bpmn_engine.model.Active a ? a.currentNodeId() : null);
 
         if (checkpointSink != null) {
+            log.trace("Checkpoint via sink instanceId={} eventType={} currentNodeId={}", instance.instanceId(), eventType, currentNodeId);
             checkpointSink.checkpoint(instance, eventType, currentNodeId, parallelJoinTokens, pending, eventCreatedAt);
             return;
         }

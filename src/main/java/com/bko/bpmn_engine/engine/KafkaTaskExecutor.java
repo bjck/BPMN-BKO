@@ -1,6 +1,8 @@
 package com.bko.bpmn_engine.engine;
 
 import com.bko.bpmn_engine.model.KafkaTaskConfiguration;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import com.bko.bpmn_engine.model.ServiceTask;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.springframework.kafka.core.KafkaTemplate;
@@ -17,6 +19,7 @@ import java.util.concurrent.TimeoutException;
  */
 public final class KafkaTaskExecutor {
 
+    private static final Logger log = LoggerFactory.getLogger(KafkaTaskExecutor.class);
     private static final ObjectMapper OBJECT_MAPPER = new ObjectMapper();
 
     private final KafkaTemplate<String, String> kafkaTemplate;
@@ -61,10 +64,12 @@ public final class KafkaTaskExecutor {
             }
         }
 
+        log.trace("Kafka task executing taskId={} topic={} key={}", task.id(), topic, key);
         try {
             SendResult<String, String> result = key != null
                     ? kafkaTemplate.send(topic, key, body).get(10, TimeUnit.SECONDS)
                     : kafkaTemplate.send(topic, body).get(10, TimeUnit.SECONDS);
+            log.trace("Kafka task sent taskId={} topic={} partition={} offset={}", task.id(), topic, result.getRecordMetadata().partition(), result.getRecordMetadata().offset());
             return Map.of("sent", true, "topic", topic, "partition", result.getRecordMetadata().partition(), "offset", result.getRecordMetadata().offset());
         } catch (InterruptedException e) {
             Thread.currentThread().interrupt();

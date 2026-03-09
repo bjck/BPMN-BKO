@@ -46,6 +46,8 @@ public class CheckpointEventConsumer {
         if (payload == null) return;
         UUID instanceId = payload.instanceId();
         log.debug("Processing checkpoint instanceId={} eventType={}", instanceId, payload.eventType());
+        log.trace("Checkpoint consume instanceId={} eventType={} stateType={} currentNodeId={} processDefinitionId={}",
+                instanceId, payload.eventType(), payload.stateType(), payload.currentNodeId(), payload.processDefinitionId());
 
         ProcessState state = StateSerializer.fromPersistence(
                 payload.stateType(),
@@ -71,6 +73,7 @@ public class CheckpointEventConsumer {
         Map<String, AtomicInteger> tokensForInstance = StateSerializer.toAtomicMap(plainTokens);
         Map<UUID, Map<String, AtomicInteger>> parallelJoinTokens = Map.of(instanceId, tokensForInstance);
 
+        log.trace("Checkpoint persisted instanceId={} eventType={}", instanceId, payload.eventType());
         instanceStorage.save(instance, parallelJoinTokens);
         instanceStorage.saveEvent(
                 instanceId,

@@ -1,0 +1,6 @@
+# Profile: trace — enables TRACE logging for full execution tracing.
+# Use when debugging: mvn spring-boot:run -Dspring-boot.run.profiles=trace
+# Or: java -jar app.jar --spring.profiles.active=trace
+logging:
+  level:
+    com.bko.bpmn_engine: TRACE

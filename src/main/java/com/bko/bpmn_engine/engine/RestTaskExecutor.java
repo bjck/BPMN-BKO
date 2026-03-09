@@ -1,6 +1,8 @@
 package com.bko.bpmn_engine.engine;
 
 import com.bko.bpmn_engine.model.RestTaskConfiguration;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import com.bko.bpmn_engine.model.ServiceTask;
 import com.fasterxml.jackson.databind.ObjectMapper;
 
@@ -18,6 +20,7 @@ import java.util.Map;
 
 final class RestTaskExecutor {
 
+    private static final Logger log = LoggerFactory.getLogger(RestTaskExecutor.class);
     private static final ObjectMapper OBJECT_MAPPER = new ObjectMapper();
 
     private final HttpClient httpClient = HttpClient.newBuilder()
@@ -35,6 +38,7 @@ final class RestTaskExecutor {
         if (url == null || url.isBlank()) {
             throw new IllegalArgumentException("REST task URL is required for task: " + task.id());
         }
+        log.trace("REST task executing taskId={} method={} url={}", task.id(), method, url);
 
         Map<String, Object> queryParameters = new LinkedHashMap<>(ConditionEvaluator.resolveMap(configuration.queryParameters(), variables));
         Map<String, Object> headers = new LinkedHashMap<>(ConditionEvaluator.resolveMap(configuration.headers(), variables));
@@ -67,6 +71,7 @@ final class RestTaskExecutor {
 
         try {
             HttpResponse<String> response = httpClient.send(requestBuilder.build(), HttpResponse.BodyHandlers.ofString());
+            log.trace("REST task response taskId={} status={}", task.id(), response.statusCode());
             Map<String, Object> responsePayload = Map.of(
                     "status", response.statusCode(),
                     "headers", flattenHeaders(response.headers().map()),

@@ -71,5 +71,6 @@ mvn package -DskipTests && java -jar target/jmh-benchmarks-jmh.jar
 
 - **Default:** In-memory only; no DB required.
 - **`persistence`:** Enables JPA and PostgreSQL (see `application-persistence.yaml` and README for Docker/DB setup).
+- **`trace`:** Enables TRACE logging for engine, tasks, and Kafka (see `application-trace.yaml`). Use when debugging execution flow.
 
 When suggesting config or code changes, preserve the above conventions and keep the hot path free of blocking I/O and `@Async`.

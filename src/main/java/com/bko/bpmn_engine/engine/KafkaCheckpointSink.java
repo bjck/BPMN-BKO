@@ -71,6 +71,8 @@ public class KafkaCheckpointSink implements CheckpointSink {
 
         String key = instance.instanceId().toString();
         log.debug("Publishing checkpoint to {} key={} eventType={}", checkpointTopic, key, eventType);
+        log.trace("Checkpoint publish topic={} instanceId={} eventType={} stateType={} currentNodeId={}",
+                checkpointTopic, instance.instanceId(), eventType, stateType, nodeId);
         try {
             SendResult<String, CheckpointEventPayload> result =
                     checkpointKafkaTemplate.send(checkpointTopic, key, payload)

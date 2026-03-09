@@ -38,6 +38,9 @@ public class BpmnEventConsumer {
             @Header(value = KafkaHeaders.RECEIVED_KEY, required = false) String key) {
         if (payload == null) return;
         log.debug("Received BPMN event key={} payload={}", key, payload);
+        log.trace("BPMN event consume key={} messageRef={} signalRef={} instanceId={} nodeId={} processDefinitionId={} correlationKey={}",
+                key, payload.messageRef(), payload.signalRef(), payload.instanceId(), payload.nodeId(),
+                payload.processDefinitionId(), payload.correlationKey());
 
         // Message start: messageRef set and no instanceId (or processDefinitionId set)
         if (payload.instanceId() == null && (payload.messageRef() != null || payload.processDefinitionId() != null)) {
@@ -48,6 +51,7 @@ public class BpmnEventConsumer {
                 if (!defIds.isEmpty()) processDefinitionId = defIds.getFirst();
             }
             if (processDefinitionId != null) {
+                log.trace("BPMN event triggering message start processDefinitionId={} messageRef={} correlationKey={}", processDefinitionId, messageRef, payload.correlationKey());
                 processEngine.triggerMessageStart(
                         processDefinitionId,
                         messageRef != null ? messageRef : "",
@@ -59,6 +63,7 @@ public class BpmnEventConsumer {
 
         // Catch event: instanceId and nodeId set (correlate to waiting instance)
         if (payload.instanceId() != null && payload.nodeId() != null) {
+            log.trace("BPMN event triggering catch event instanceId={} nodeId={}", payload.instanceId(), payload.nodeId());
             processEngine.triggerCatchEvent(
                     payload.instanceId(),
                     payload.nodeId(),
@@ -69,6 +74,7 @@ public class BpmnEventConsumer {
         // Correlation by messageRef + correlationKey to find waiting instance
         if (payload.messageRef() != null || payload.signalRef() != null) {
             String ref = payload.messageRef() != null ? payload.messageRef() : payload.signalRef();
+            log.trace("BPMN event triggering catch by messageRef ref={} correlationKey={}", ref, payload.correlationKey());
             processEngine.triggerCatchEventByMessageRef(
                     ref,
                     payload.correlationKey(),

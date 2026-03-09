@@ -1,6 +1,8 @@
 package com.bko.bpmn_engine.engine;
 
 import com.fasterxml.jackson.core.type.TypeReference;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.springframework.expression.spel.standard.SpelExpressionParser;
 import org.springframework.expression.spel.support.MapAccessor;
@@ -21,6 +23,7 @@ import java.util.stream.Collectors;
  */
 final class ConditionEvaluator {
 
+    private static final Logger log = LoggerFactory.getLogger(ConditionEvaluator.class);
     private static final SpelExpressionParser SPEL_PARSER = new SpelExpressionParser();
     private static final ScriptEngineManager SCRIPT_ENGINE_MANAGER = new ScriptEngineManager();
     private static final ObjectMapper OBJECT_MAPPER = new ObjectMapper();
@@ -53,14 +56,18 @@ final class ConditionEvaluator {
 
         try {
             Object result = resolveValue(condition, language, variables);
+            boolean outcome;
             if (result instanceof Boolean booleanValue) {
-                return booleanValue;
+                outcome = booleanValue;
+            } else if (result instanceof String stringValue) {
+                outcome = Boolean.parseBoolean(stringValue);
+            } else {
+                outcome = false;
             }
-            if (result instanceof String stringValue) {
-                return Boolean.parseBoolean(stringValue);
-            }
-            return false;
+            log.trace("Condition evaluated condition={} language={} result={} outcome={}", condition, language, result, outcome);
+            return outcome;
         } catch (Exception e) {
+            log.trace("Condition evaluation failed condition={} language={} error={}", condition, language, e.getMessage());
             return false;
         }
     }
