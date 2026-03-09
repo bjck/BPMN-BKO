@@ -253,6 +253,53 @@ class BpmnParserTest {
     }
 
     @Test
+    void parseNoProcessElement_throwsBpmnParseException() {
+        String xml = "<?xml version=\"1.0\"?><root><something/></root>";
+        BpmnParseException ex = assertThrows(BpmnParseException.class, () -> parser.parse(xml));
+        assertNotNull(ex.getMessage());
+        assertTrue(ex.getMessage().contains("process") || ex.getMessage().contains("No process"));
+    }
+
+    @Test
+    void serializeWithDiagram_includesBpmnEdgeElements() throws Exception {
+        String xml = loadFixture("minimal.bpmn");
+        CompiledProcess compiled = parser.parse(xml);
+        String withDiagram = parser.serializeWithDiagram(compiled.definition());
+        assertNotNull(withDiagram);
+        assertTrue(withDiagram.contains("BPMNEdge") || withDiagram.contains("bpmnEdge"));
+    }
+
+    @Test
+    void parseKafkaTaskConfiguration_readsKafkaTaskExtension() throws Exception {
+        String xml = """
+                <?xml version="1.0" encoding="UTF-8"?>
+                <bpmn:definitions xmlns:bpmn="http://www.omg.org/spec/BPMN/20100524/MODEL"
+                                  xmlns:engine="https://bko.dev/schema/bpmn-engine/1.0">
+                  <bpmn:process id="Kafka_Process" name="Kafka Process">
+                    <bpmn:startEvent id="Start"><bpmn:outgoing>F1</bpmn:outgoing></bpmn:startEvent>
+                    <bpmn:serviceTask id="Kafka_Task" implementation="kafka">
+                      <bpmn:incoming>F1</bpmn:incoming><bpmn:outgoing>F2</bpmn:outgoing>
+                      <bpmn:extensionElements>
+                        <engine:taskConfiguration type="kafka"
+                                                  topic="orders"
+                                                  key="= orderId"
+                                                  headers="= { X-Correlation: correlationId }"/>
+                      </bpmn:extensionElements>
+                    </bpmn:serviceTask>
+                    <bpmn:endEvent id="End"><bpmn:incoming>F2</bpmn:incoming></bpmn:endEvent>
+                    <bpmn:sequenceFlow id="F1" sourceRef="Start" targetRef="Kafka_Task"/>
+                    <bpmn:sequenceFlow id="F2" sourceRef="Kafka_Task" targetRef="End"/>
+                  </bpmn:process>
+                </bpmn:definitions>
+                """;
+        CompiledProcess compiled = parser.parse(xml);
+        ServiceTask task = (ServiceTask) compiled.definition().nodes().get("Kafka_Task");
+        assertEquals(ServiceTaskType.KAFKA, task.taskType());
+        assertNotNull(task.kafkaConfiguration());
+        assertEquals("orders", task.kafkaConfiguration().topic());
+    }
+
+    @Test
     void emptyProcess_throwsBpmnParseException() {
         String xml = """
                 <?xml version="1.0"?>

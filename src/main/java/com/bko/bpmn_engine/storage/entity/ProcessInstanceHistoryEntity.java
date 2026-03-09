@@ -50,6 +50,7 @@ public class ProcessInstanceHistoryEntity {
     protected ProcessInstanceHistoryEntity() {
     }
 
+    @SuppressWarnings("java:S107")
     public ProcessInstanceHistoryEntity(UUID instanceId, String processDefinitionId, String state,
                                        String currentNodeId, String errorMessage, String variablesJson,
                                        String parallelJoinTokensJson, Instant createdAt, Instant completedAt) {

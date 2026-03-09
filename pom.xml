@@ -29,6 +29,7 @@
 	<properties>
 		<java.version>21</java.version>
 		<jmh.version>1.37</jmh.version>
+		<sonar.host.url>http://localhost:9001</sonar.host.url>
 	</properties>
 	<dependencies>
 		<dependency>
@@ -162,11 +163,77 @@
 				</executions>
 			</plugin>
 			<plugin>
+				<groupId>org.jacoco</groupId>
+				<artifactId>jacoco-maven-plugin</artifactId>
+				<version>0.8.12</version>
+				<executions>
+					<execution>
+						<id>prepare-agent</id>
+						<goals>
+							<goal>prepare-agent</goal>
+						</goals>
+						<phase>initialize</phase>
+						<configuration>
+							<propertyName>argLine</propertyName>
+						</configuration>
+					</execution>
+					<execution>
+						<id>report</id>
+						<phase>test</phase>
+						<goals>
+							<goal>report</goal>
+						</goals>
+						<configuration>
+							<excludes>
+								<exclude>**/jmh/**</exclude>
+								<exclude>**/bench/**</exclude>
+								<exclude>**/jmh_generated/**</exclude>
+								<exclude>**/BpmnEngineApplication.class</exclude>
+								<exclude>com/bko/bpmn_engine/bench/**/*</exclude>
+							</excludes>
+						</configuration>
+					</execution>
+					<execution>
+						<id>check</id>
+						<phase>verify</phase>
+						<goals>
+							<goal>check</goal>
+						</goals>
+						<configuration>
+							<excludes>
+								<exclude>**/jmh/**</exclude>
+								<exclude>**/bench/**</exclude>
+								<exclude>**/jmh_generated/**</exclude>
+								<exclude>**/BpmnEngineApplication.class</exclude>
+								<exclude>com/bko/bpmn_engine/bench/**/*</exclude>
+							</excludes>
+							<rules>
+								<rule>
+									<element>BUNDLE</element>
+									<limits>
+										<limit>
+											<counter>LINE</counter>
+											<value>COVEREDRATIO</value>
+											<minimum>0.79</minimum>
+										</limit>
+									</limits>
+								</rule>
+							</rules>
+						</configuration>
+					</execution>
+				</executions>
+			</plugin>
+			<plugin>
 				<groupId>org.apache.maven.plugins</groupId>
 				<artifactId>maven-surefire-plugin</artifactId>
 				<configuration>
-					<argLine>-XX:+UseZGC -XX:MaxGCPauseMillis=1</argLine>
+					<argLine>${argLine} -XX:+UseZGC -XX:MaxGCPauseMillis=1</argLine>
 				</configuration>
+			</plugin>
+			<plugin>
+				<groupId>org.sonarsource.scanner.maven</groupId>
+				<artifactId>sonar-maven-plugin</artifactId>
+				<version>4.0.0.0-M12</version>
 			</plugin>
 			<plugin>
 				<groupId>org.springframework.boot</groupId>

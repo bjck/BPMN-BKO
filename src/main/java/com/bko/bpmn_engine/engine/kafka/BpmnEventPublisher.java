@@ -38,10 +38,18 @@ public class BpmnEventPublisher {
      * Send a BPMN event (message throw, signal throw, message end, error end) to Kafka.
      */
     public CompletableFuture<SendResult<String, BpmnEventPayload>> publish(BpmnEventPayload payload) {
-        String key = payload.messageRef() != null ? payload.messageRef()
-                : payload.signalRef() != null ? payload.signalRef()
-                : payload.errorCode() != null ? payload.errorCode()
-                : payload.instanceId() != null ? payload.instanceId().toString() : "bpmn-event";
+        String key;
+        if (payload.messageRef() != null) {
+            key = payload.messageRef();
+        } else if (payload.signalRef() != null) {
+            key = payload.signalRef();
+        } else if (payload.errorCode() != null) {
+            key = payload.errorCode();
+        } else if (payload.instanceId() != null) {
+            key = payload.instanceId().toString();
+        } else {
+            key = "bpmn-event";
+        }
         log.debug("Publishing BPMN event to {} key={} payload={}", topic, key, payload);
         log.trace("BPMN event publish topic={} key={} messageRef={} signalRef={} instanceId={} nodeId={}",
                 topic, key, payload.messageRef(), payload.signalRef(), payload.instanceId(), payload.nodeId());

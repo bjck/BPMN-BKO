@@ -2,7 +2,6 @@ package com.bko.bpmn_engine.engine;
 
 import com.bko.bpmn_engine.engine.kafka.CheckpointEventPayload;
 import com.bko.bpmn_engine.model.ProcessInstance;
-import com.bko.bpmn_engine.model.ProcessState;
 import com.bko.bpmn_engine.storage.ProcessInstanceStorage;
 import com.bko.bpmn_engine.storage.StateSerializer;
 import com.bko.bpmn_engine.storage.VariableSerializer;
@@ -43,8 +42,12 @@ public class KafkaCheckpointSink implements CheckpointSink {
                            List<ProcessInstanceStorage.TaskExecutionRecord> taskExecutionRecords,
                            Instant eventCreatedAt) {
         String stateType = StateSerializer.stateType(instance.state());
-        String nodeId = currentNodeId != null ? currentNodeId
-                : (instance.state() instanceof com.bko.bpmn_engine.model.Active a ? a.currentNodeId() : null);
+        String nodeId;
+        if (currentNodeId != null) {
+            nodeId = currentNodeId;
+        } else {
+            nodeId = instance.state() instanceof com.bko.bpmn_engine.model.Active a ? a.currentNodeId() : null;
+        }
         String errorMessage = instance.state() instanceof com.bko.bpmn_engine.model.Failed f ? f.errorMessage() : null;
         String variablesJson = VariableSerializer.toJson(Map.copyOf(instance.variables()));
         String parallelJoinTokensJson = StateSerializer.parallelJoinTokensToJson(parallelJoinTokens, instance.instanceId());
@@ -80,6 +83,9 @@ public class KafkaCheckpointSink implements CheckpointSink {
             if (log.isTraceEnabled()) {
                 log.trace("Checkpoint sent partition={} offset={}", result.getRecordMetadata().partition(), result.getRecordMetadata().offset());
             }
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            throw new CheckpointPublishException("Failed to publish checkpoint for instance " + instance.instanceId(), e);
         } catch (Exception e) {
             throw new CheckpointPublishException("Failed to publish checkpoint for instance " + instance.instanceId(), e);
         }

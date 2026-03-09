@@ -35,6 +35,8 @@ import java.util.concurrent.atomic.AtomicInteger;
 public class ProcessEngine {
 
     private static final Logger log = LoggerFactory.getLogger(ProcessEngine.class);
+    private static final String VAR_CORRELATION_KEY = "correlationKey";
+    private static final String VAR_FAILED_AT_NODE_ID = "failedAtNodeId";
 
     private final BpmnParser parser;
     private final ApplicationEventPublisher eventPublisher;
@@ -187,7 +189,7 @@ public class ProcessEngine {
         UUID instanceId = UUID.randomUUID();
         ConcurrentHashMap<String, Object> vars = new ConcurrentHashMap<>();
         if (variables != null) vars.putAll(variables);
-        if (correlationKey != null) vars.put("correlationKey", correlationKey);
+        if (correlationKey != null) vars.put(VAR_CORRELATION_KEY, correlationKey);
 
         ProcessInstance instance = new ProcessInstance(
                 instanceId, processDefinitionId, vars,
@@ -224,7 +226,7 @@ public class ProcessEngine {
         if (compiled == null) return;
         List<String> next = compiled.adjacency().get(nodeId);
         if (next != null && !next.isEmpty()) {
-            advanceAndExecute(instance, next.getFirst(), compiled);
+            advanceAndExecute(instance, next.getFirst());
         }
     }
 
@@ -262,20 +264,21 @@ public class ProcessEngine {
 
         log.trace("Executing node instanceId={} nodeId={} nodeType={}", instance.instanceId(), nodeId, node.getClass().getSimpleName());
         switch (node) {
-            case StartEvent start -> {
-                if (start.trigger() == StartEventTrigger.NONE || start.trigger() == StartEventTrigger.MESSAGE) {
-                    List<String> next = compiled.adjacency().get(nodeId);
-                    if (next != null && !next.isEmpty()) {
-                        log.trace("StartEvent advancing instanceId={} to next={}", current.instanceId(), next.getFirst());
-                        advanceAndExecute(current, next.getFirst(), compiled);
-                    }
+            case StartEvent start when start.trigger() == StartEventTrigger.NONE || start.trigger() == StartEventTrigger.MESSAGE -> {
+                List<String> next = compiled.adjacency().get(nodeId);
+                if (next != null && !next.isEmpty()) {
+                    log.trace("StartEvent advancing instanceId={} to next={}", current.instanceId(), next.getFirst());
+                    advanceAndExecute(current, next.getFirst());
                 }
+                // TIMER: advance when timer fires (scheduled or external trigger)
+            }
+            case StartEvent start -> {
                 // TIMER: advance when timer fires (scheduled or external trigger)
             }
             case EndEvent end -> {
                 log.trace("EndEvent reached instanceId={} nodeId={} endType={}", current.instanceId(), nodeId, end.endType());
                 if (bpmnEventPublisher != null) {
-                    String correlationKey = current.variables().get("correlationKey") != null ? String.valueOf(current.variables().get("correlationKey")) : null;
+                    String correlationKey = current.variables().get(VAR_CORRELATION_KEY) != null ? String.valueOf(current.variables().get(VAR_CORRELATION_KEY)) : null;
                     if (end.endType() == EndEventType.MESSAGE && end.messageRef() != null) {
                         bpmnEventPublisher.publish(BpmnEventPayload.forThrow(end.messageRef(), null, correlationKey, current.instanceId(), nodeId, Map.copyOf(current.variables())));
                     } else if (end.endType() == EndEventType.ERROR && end.errorCode() != null) {
@@ -297,7 +300,7 @@ public class ProcessEngine {
             }
             case ServiceTask st -> {
                 List<String> chain = findChainContaining(compiled, nodeId);
-                if (chain != null) {
+                if (!chain.isEmpty()) {
                     log.trace("ServiceTask chain instanceId={} taskId={} implementation={} chainSize={}", current.instanceId(), nodeId, st.implementation(), chain.size());
                     executeSequentialChain(getCurrentInstance(instance.instanceId()), chain, compiled);
                 } else {
@@ -309,7 +312,7 @@ public class ProcessEngine {
                 String targetId = selectConditionalBranch(ex.id(), ex.defaultFlow(), def, current.variables());
                 log.trace("ExclusiveGateway instanceId={} gatewayId={} selectedTarget={}", current.instanceId(), ex.id(), targetId);
                 if (targetId != null) {
-                    advanceAndExecute(current, targetId, compiled);
+                    advanceAndExecute(current, targetId);
                 }
             }
             case ParallelGateway pg -> {
@@ -323,7 +326,7 @@ public class ProcessEngine {
                         List<String> next = compiled.adjacency().get(nodeId);
                         if (next != null && !next.isEmpty()) {
                             log.trace("ParallelGateway join complete instanceId={} advancing to {}", current.instanceId(), next.getFirst());
-                            advanceAndExecute(current, next.getFirst(), compiled);
+                            advanceAndExecute(current, next.getFirst());
                         }
                     }
                 } else {
@@ -346,13 +349,13 @@ public class ProcessEngine {
                     if (arrived >= expected) {
                         List<String> next = compiled.adjacency().get(nodeId);
                         if (next != null && !next.isEmpty()) {
-                            advanceAndExecute(current, next.getFirst(), compiled);
+                            advanceAndExecute(current, next.getFirst());
                         }
                     }
                 } else {
                     List<String> targetIds = selectInclusiveBranches(inc, def, current.variables());
                     for (String targetId : targetIds) {
-                        advanceAndExecute(current, targetId, compiled);
+                        advanceAndExecute(current, targetId);
                     }
                 }
             }
@@ -360,14 +363,14 @@ public class ProcessEngine {
                 List<String> targetIds = selectComplexBranches(cg, def, current.variables());
                 log.trace("ComplexGateway instanceId={} gatewayId={} selectedTargets={}", current.instanceId(), cg.id(), targetIds);
                 for (String targetId : targetIds) {
-                    advanceAndExecute(current, targetId, compiled);
+                    advanceAndExecute(current, targetId);
                 }
             }
             case EventBasedGateway ev -> {
                 String targetId = selectConditionalBranch(ev.id(), ev.defaultFlow(), def, current.variables());
                 log.trace("EventBasedGateway instanceId={} gatewayId={} selectedTarget={}", current.instanceId(), ev.id(), targetId);
                 if (targetId != null) {
-                    advanceAndExecute(current, targetId, compiled);
+                    advanceAndExecute(current, targetId);
                 }
             }
             case UserTask ignored -> {
@@ -378,7 +381,7 @@ public class ProcessEngine {
             case IntermediateCatchEvent ice -> {
                 log.trace("IntermediateCatchEvent instanceId={} nodeId={} catchType={}", current.instanceId(), nodeId, ice.catchType());
                 if (ice.catchType() == CatchEventType.MESSAGE && ice.messageRef() != null) {
-                    String correlationKey = current.variables().get("correlationKey") != null ? String.valueOf(current.variables().get("correlationKey")) : null;
+                    String correlationKey = current.variables().get(VAR_CORRELATION_KEY) != null ? String.valueOf(current.variables().get(VAR_CORRELATION_KEY)) : null;
                     messageSubscriptions
                             .computeIfAbsent(ice.messageRef(), k -> new CopyOnWriteArrayList<>())
                             .add(new MessageSubscription(current.instanceId(), nodeId, correlationKey));
@@ -391,7 +394,7 @@ public class ProcessEngine {
                         java.util.concurrent.ScheduledExecutorService scheduler = getTimerScheduler();
                         scheduler.schedule(() -> triggerCatchEvent(instId, nId, Map.of()), delayMs, java.util.concurrent.TimeUnit.MILLISECONDS);
                     } else {
-                        String correlationKey = current.variables().get("correlationKey") != null ? String.valueOf(current.variables().get("correlationKey")) : null;
+                        String correlationKey = current.variables().get(VAR_CORRELATION_KEY) != null ? String.valueOf(current.variables().get(VAR_CORRELATION_KEY)) : null;
                         messageSubscriptions
                                 .computeIfAbsent("__timer__" + nodeId, k -> new CopyOnWriteArrayList<>())
                                 .add(new MessageSubscription(current.instanceId(), nodeId, correlationKey));
@@ -399,13 +402,13 @@ public class ProcessEngine {
                     }
                 } else {
                     List<String> next = compiled.adjacency().get(nodeId);
-                    if (next != null && !next.isEmpty()) advanceAndExecute(current, next.getFirst(), compiled);
+                    if (next != null && !next.isEmpty()) advanceAndExecute(current, next.getFirst());
                 }
             }
             case IntermediateThrowEvent ite -> {
                 log.trace("IntermediateThrowEvent instanceId={} nodeId={} throwType={}", current.instanceId(), nodeId, ite.throwType());
                 if (bpmnEventPublisher != null) {
-                    String correlationKey = current.variables().get("correlationKey") != null ? String.valueOf(current.variables().get("correlationKey")) : null;
+                    String correlationKey = current.variables().get(VAR_CORRELATION_KEY) != null ? String.valueOf(current.variables().get(VAR_CORRELATION_KEY)) : null;
                     if (ite.throwType() == ThrowEventType.MESSAGE && ite.messageRef() != null) {
                         bpmnEventPublisher.publish(BpmnEventPayload.forThrow(ite.messageRef(), null, correlationKey, current.instanceId(), nodeId, Map.copyOf(current.variables())));
                     } else if (ite.throwType() == ThrowEventType.SIGNAL && ite.signalRef() != null) {
@@ -413,7 +416,7 @@ public class ProcessEngine {
                     }
                 }
                 List<String> next = compiled.adjacency().get(nodeId);
-                if (next != null && !next.isEmpty()) advanceAndExecute(current, next.getFirst(), compiled);
+                if (next != null && !next.isEmpty()) advanceAndExecute(current, next.getFirst());
             }
         }
     }
@@ -460,7 +463,7 @@ public class ProcessEngine {
                 log.trace("Task activated instanceId={} taskId={} implementation={}", current.instanceId(), taskId, st.implementation());
                 eventPublisher.publishEvent(new TaskActivatedEvent(this, current.instanceId(), taskId, st.implementation()));
                 try {
-                    applyTaskResult(current, st, executeTask(st, current));
+                    applyTaskResult(current, executeTask(st, current));
                 } catch (Exception e) {
                     failInstance(current, e);
                     throw e;
@@ -480,7 +483,7 @@ public class ProcessEngine {
         if (next != null && !next.isEmpty()) {
             log.trace("Chain completed instanceId={} advancing to {}", current.instanceId(), next.getFirst());
             persistCheckpoint(current, "SERVICE_TASKS_COMPLETED");
-            advanceAndExecute(current, next.getFirst(), compiled);
+            advanceAndExecute(current, next.getFirst());
         }
     }
 
@@ -514,7 +517,7 @@ public class ProcessEngine {
 
         List<String> next = compiled.adjacency().get(taskId);
         if (next != null && !next.isEmpty()) {
-            advanceAndExecute(instance, next.getFirst(), compiled);
+            advanceAndExecute(instance, next.getFirst());
         }
 
         return activeInstances.getOrDefault(instanceId, instance);
@@ -579,7 +582,7 @@ public class ProcessEngine {
         if (!(instance.state() instanceof Failed)) {
             throw new IllegalStateTransitionException("Instance is not failed; cannot restart: " + instanceId);
         }
-        Object nodeIdObj = instance.variables().get("failedAtNodeId");
+        Object nodeIdObj = instance.variables().get(VAR_FAILED_AT_NODE_ID);
         if (!(nodeIdObj instanceof String nodeId) || nodeId.isBlank()) {
             throw new IllegalStateTransitionException("Cannot restart: failed-at node id is missing for instance: " + instanceId);
         }
@@ -589,7 +592,7 @@ public class ProcessEngine {
         }
         completedInstances.remove(instanceId);
         instance.variables().remove("errorMessage");
-        instance.variables().remove("failedAtNodeId");
+        instance.variables().remove(VAR_FAILED_AT_NODE_ID);
         ProcessInstance restarted = transitionTo(instance, new Active(instance.instanceId(), nodeId));
         persistCheckpoint(restarted, "RESTARTED");
         executeFrom(restarted, nodeId);
@@ -661,7 +664,7 @@ public class ProcessEngine {
                 .sorted((a, b) -> b.createdAt().compareTo(a.createdAt()))
                 .toList();
         int total = sorted.size();
-        int safeSize = Math.min(Math.max(1, size), 100);
+        int safeSize = Math.clamp(size, 1, 100);
         int safePage = Math.max(1, page);
         int start = (safePage - 1) * safeSize;
         int end = Math.min(start + safeSize, total);
@@ -709,7 +712,7 @@ public class ProcessEngine {
         return updated;
     }
 
-    private void advanceAndExecute(ProcessInstance instance, String nextNodeId, CompiledProcess compiled) {
+    private void advanceAndExecute(ProcessInstance instance, String nextNodeId) {
         ProcessInstance current = getCurrentInstance(instance.instanceId());
         if (current == null) return;
 
@@ -728,7 +731,7 @@ public class ProcessEngine {
         log.trace("Executing service task instanceId={} taskId={} implementation={} taskType={}", current.instanceId(), st.id(), st.implementation(), st.taskType());
         eventPublisher.publishEvent(new TaskActivatedEvent(this, current.instanceId(), st.id(), st.implementation()));
         try {
-            applyTaskResult(current, st, executeTask(st, current));
+            applyTaskResult(current, executeTask(st, current));
         } catch (Exception e) {
             failInstance(current, e);
             throw e;
@@ -742,7 +745,7 @@ public class ProcessEngine {
         List<String> next = compiled.adjacency().get(st.id());
         if (next != null && !next.isEmpty()) {
             persistCheckpoint(current, "SERVICE_TASK_COMPLETED");
-            advanceAndExecute(current, next.getFirst(), compiled);
+            advanceAndExecute(current, next.getFirst());
         }
     }
 
@@ -751,7 +754,7 @@ public class ProcessEngine {
         log.trace("Instance failed instanceId={} message={} failedAtNodeId={}", current.instanceId(), message, current.state() instanceof Active a ? a.currentNodeId() : null);
         current.variables().put("errorMessage", message);
         if (current.state() instanceof Active a) {
-            current.variables().put("failedAtNodeId", a.currentNodeId());
+            current.variables().put(VAR_FAILED_AT_NODE_ID, a.currentNodeId());
         }
         ProcessInstance failed = transitionTo(current, new Failed(current.instanceId(), message));
         activeInstances.remove(current.instanceId());
@@ -769,36 +772,31 @@ public class ProcessEngine {
                 return chain;
             }
         }
-        return null;
+        return List.of();
     }
 
     private Map<String, Object> executeTask(ServiceTask task, ProcessInstance instance) {
-        if (task.taskType() == ServiceTaskType.REST) {
-            Object result = restTaskExecutor.execute(task, Map.copyOf(instance.variables()));
-            return wrapTaskResult(task, result);
-        }
-
-        if (task.taskType() == ServiceTaskType.BEAN) {
-            return executeBeanTask(task, instance);
-        }
-
-        if (task.taskType() == ServiceTaskType.KAFKA) {
-            if (kafkaTaskExecutor == null) {
-                throw new IllegalStateException("Kafka service task requires Kafka to be enabled (bpmn.kafka.enabled=true) and bpmnServiceTaskKafkaTemplate: " + task.id());
-            }
-            Object result = kafkaTaskExecutor.execute(task, Map.copyOf(instance.variables()));
-            return wrapTaskResult(task, result);
-        }
-
-        TaskWorker worker = workers.get(task.implementation());
-        if (worker == null) {
-            return Map.of();
-        }
-
-        return worker.execute(Map.copyOf(instance.variables()));
+        return switch (task.taskType()) {
+            case REST -> wrapTaskResult(task, restTaskExecutor.execute(task, Map.copyOf(instance.variables())));
+            case BEAN -> executeBeanTask(task, instance);
+            case KAFKA -> executeKafkaTask(task, instance);
+            case WORKER -> executeWorkerTask(task, instance);
+        };
     }
 
-    private void applyTaskResult(ProcessInstance instance, ServiceTask task, Map<String, Object> result) {
+    private Map<String, Object> executeKafkaTask(ServiceTask task, ProcessInstance instance) {
+        if (kafkaTaskExecutor == null) {
+            throw new IllegalStateException("Kafka service task requires Kafka to be enabled (bpmn.kafka.enabled=true) and bpmnServiceTaskKafkaTemplate: " + task.id());
+        }
+        return wrapTaskResult(task, kafkaTaskExecutor.execute(task, Map.copyOf(instance.variables())));
+    }
+
+    private Map<String, Object> executeWorkerTask(ServiceTask task, ProcessInstance instance) {
+        TaskWorker worker = workers.get(task.implementation());
+        return worker != null ? worker.execute(Map.copyOf(instance.variables())) : Map.of();
+    }
+
+    private void applyTaskResult(ProcessInstance instance, Map<String, Object> result) {
         if (result == null || result.isEmpty()) {
             return;
         }
@@ -877,8 +875,12 @@ public class ProcessEngine {
         List<ProcessInstanceStorage.TaskExecutionRecord> pending = pendingTaskExecutions.remove(instance.instanceId());
         if (pending == null) pending = List.of();
 
-        String currentNodeId = currentNodeIdOverride != null ? currentNodeIdOverride
-                : (instance.state() instanceof com.bko.bpmn_engine.model.Active a ? a.currentNodeId() : null);
+        String currentNodeId;
+        if (currentNodeIdOverride != null) {
+            currentNodeId = currentNodeIdOverride;
+        } else {
+            currentNodeId = instance.state() instanceof com.bko.bpmn_engine.model.Active a ? a.currentNodeId() : null;
+        }
 
         if (checkpointSink != null) {
             log.trace("Checkpoint via sink instanceId={} eventType={} currentNodeId={}", instance.instanceId(), eventType, currentNodeId);
@@ -969,17 +971,14 @@ public class ProcessEngine {
     private String selectConditionalBranch(String gatewayId, String defaultFlowId, ProcessDefinition def, Map<String, Object> variables) {
         for (SequenceFlow flow : def.sequenceFlows().values()) {
             if (!flow.sourceRef().equals(gatewayId)) continue;
-            if (flow.conditionExpression() != null && !flow.conditionExpression().isBlank()) {
-                if (ConditionEvaluator.evaluate(flow.conditionExpression(), flow.conditionExpressionLanguage(), variables)) {
-                    return flow.targetRef();
-                }
+            if (flow.conditionExpression() != null && !flow.conditionExpression().isBlank()
+                    && ConditionEvaluator.evaluate(flow.conditionExpression(), flow.conditionExpressionLanguage(), variables)) {
+                return flow.targetRef();
             }
         }
         if (defaultFlowId != null && !defaultFlowId.isBlank()) {
             SequenceFlow defaultFlow = def.sequenceFlows().get(defaultFlowId);
-            if (defaultFlow != null) {
-                return defaultFlow.targetRef();
-            }
+            if (defaultFlow != null) return defaultFlow.targetRef();
         }
         return null;
     }
@@ -988,17 +987,14 @@ public class ProcessEngine {
         List<String> targetIds = new ArrayList<>();
         for (SequenceFlow flow : def.sequenceFlows().values()) {
             if (!flow.sourceRef().equals(gateway.id())) continue;
-            if (flow.conditionExpression() != null && !flow.conditionExpression().isBlank()) {
-                if (ConditionEvaluator.evaluate(flow.conditionExpression(), flow.conditionExpressionLanguage(), variables)) {
-                    targetIds.add(flow.targetRef());
-                }
+            if (flow.conditionExpression() != null && !flow.conditionExpression().isBlank()
+                    && ConditionEvaluator.evaluate(flow.conditionExpression(), flow.conditionExpressionLanguage(), variables)) {
+                targetIds.add(flow.targetRef());
             }
         }
         if (targetIds.isEmpty() && gateway.defaultFlow() != null && !gateway.defaultFlow().isBlank()) {
             SequenceFlow defaultFlow = def.sequenceFlows().get(gateway.defaultFlow());
-            if (defaultFlow != null) {
-                targetIds.add(defaultFlow.targetRef());
-            }
+            if (defaultFlow != null) targetIds.add(defaultFlow.targetRef());
         }
         return targetIds;
     }
@@ -1007,43 +1003,44 @@ public class ProcessEngine {
     private List<String> selectComplexBranches(ComplexGateway gateway, ProcessDefinition def, Map<String, Object> variables) {
         String expr = gateway.activationExpression();
         if (expr == null || expr.isBlank()) {
-            if (gateway.defaultFlow() != null && !gateway.defaultFlow().isBlank()) {
-                SequenceFlow f = def.sequenceFlows().get(gateway.defaultFlow());
-                return f != null ? List.of(f.targetRef()) : List.of();
-            }
-            return List.of();
+            return resolveComplexDefaultFlow(gateway, def);
         }
         Object result = ConditionEvaluator.resolveValue(expr, gateway.activationLanguage(), variables);
         if (result == null) {
-            if (gateway.defaultFlow() != null && !gateway.defaultFlow().isBlank()) {
-                SequenceFlow f = def.sequenceFlows().get(gateway.defaultFlow());
-                return f != null ? List.of(f.targetRef()) : List.of();
-            }
-            return List.of();
+            return resolveComplexDefaultFlow(gateway, def);
         }
         if (result instanceof String flowId) {
-            SequenceFlow f = def.sequenceFlows().get(flowId);
-            if (f != null && f.sourceRef().equals(gateway.id())) {
-                return List.of(f.targetRef());
-            }
-            return List.of();
+            return resolveComplexFlowId(gateway, def, flowId);
         }
         if (result instanceof List<?> list) {
-            List<String> targetIds = new ArrayList<>();
-            for (Object item : list) {
-                String flowId = item != null ? String.valueOf(item) : null;
-                if (flowId == null || flowId.isBlank()) continue;
-                SequenceFlow f = def.sequenceFlows().get(flowId);
-                if (f != null && f.sourceRef().equals(gateway.id())) {
-                    targetIds.add(f.targetRef());
-                }
+            return resolveComplexFlowList(gateway, def, list);
+        }
+        return resolveComplexDefaultFlow(gateway, def);
+    }
+
+    private List<String> resolveComplexDefaultFlow(ComplexGateway gateway, ProcessDefinition def) {
+        if (gateway.defaultFlow() == null || gateway.defaultFlow().isBlank()) {
+            return List.of();
+        }
+        SequenceFlow f = def.sequenceFlows().get(gateway.defaultFlow());
+        return f != null ? List.of(f.targetRef()) : List.of();
+    }
+
+    private List<String> resolveComplexFlowId(ComplexGateway gateway, ProcessDefinition def, String flowId) {
+        SequenceFlow f = def.sequenceFlows().get(flowId);
+        return (f != null && f.sourceRef().equals(gateway.id())) ? List.of(f.targetRef()) : List.of();
+    }
+
+    private List<String> resolveComplexFlowList(ComplexGateway gateway, ProcessDefinition def, List<?> list) {
+        List<String> targetIds = new ArrayList<>();
+        for (Object item : list) {
+            String flowId = item != null ? String.valueOf(item) : null;
+            if (flowId == null || flowId.isBlank()) continue;
+            SequenceFlow f = def.sequenceFlows().get(flowId);
+            if (f != null && f.sourceRef().equals(gateway.id())) {
+                targetIds.add(f.targetRef());
             }
-            return targetIds;
         }
-        if (gateway.defaultFlow() != null && !gateway.defaultFlow().isBlank()) {
-            SequenceFlow f = def.sequenceFlows().get(gateway.defaultFlow());
-            return f != null ? List.of(f.targetRef()) : List.of();
-        }
-        return List.of();
+        return targetIds;
     }
 }

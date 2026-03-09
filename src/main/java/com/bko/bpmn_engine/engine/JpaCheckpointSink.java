@@ -42,8 +42,12 @@ public class JpaCheckpointSink implements CheckpointSink {
                     instance.completedAt()
             );
         }
-        String nodeIdForEvent = currentNodeId != null ? currentNodeId
-                : (instance.state() instanceof Active a ? a.currentNodeId() : null);
+        String nodeIdForEvent;
+        if (currentNodeId != null) {
+            nodeIdForEvent = currentNodeId;
+        } else {
+            nodeIdForEvent = instance.state() instanceof Active a ? a.currentNodeId() : null;
+        }
         log.trace("JPA checkpoint instanceId={} eventType={} currentNodeId={}", instance.instanceId(), eventType, nodeIdForEvent);
         instanceStorage.save(toSave, parallelJoinTokens);
         instanceStorage.saveEvent(

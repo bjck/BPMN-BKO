@@ -31,55 +31,47 @@ public record CompiledProcess(
 
         for (String nodeId : definition.nodes().keySet()) {
             FlowNode node = definition.nodes().get(nodeId);
-            if (!(node instanceof ServiceTask st)) {
-                continue;
-            }
-            if (visited.contains(nodeId)) {
-                continue;
-            }
+            if (!(node instanceof ServiceTask st)) continue;
+            if (visited.contains(nodeId)) continue;
 
-            // Only start a chain from a "chain head": no incoming from another ServiceTask
             boolean hasIncomingFromServiceTask = st.incoming().stream()
                     .anyMatch(inId -> definition.nodes().get(inId) instanceof ServiceTask);
-            if (hasIncomingFromServiceTask) {
-                continue;
-            }
+            if (hasIncomingFromServiceTask) continue;
 
-            List<String> chain = new ArrayList<>();
-            String current = nodeId;
-
-            while (true) {
-                FlowNode n = definition.nodes().get(current);
-                if (!(n instanceof ServiceTask)) {
-                    break;
-                }
-                if (visited.contains(current)) {
-                    break;
-                }
-                chain.add(current);
-                visited.add(current);
-
-                List<String> nextIds = adjacency.get(current);
-                if (nextIds == null || nextIds.isEmpty()) {
-                    break;
-                }
-
-                List<String> serviceTaskSuccessors = nextIds.stream()
-                        .filter(id -> definition.nodes().get(id) instanceof ServiceTask)
-                        .toList();
-
-                if (serviceTaskSuccessors.size() != 1) {
-                    break;
-                }
-
-                current = serviceTaskSuccessors.getFirst();
-            }
-
+            List<String> chain = buildChainFromNode(nodeId, definition, adjacency, visited);
             if (!chain.isEmpty()) {
                 chains.add(List.copyOf(chain));
             }
         }
 
         return chains;
+    }
+
+    private static List<String> buildChainFromNode(String startNodeId, ProcessDefinition definition,
+                                                   Map<String, List<String>> adjacency, Set<String> visited) {
+        List<String> chain = new ArrayList<>();
+        String current = startNodeId;
+
+        while (true) {
+            FlowNode n = definition.nodes().get(current);
+            if (!(n instanceof ServiceTask)) break;
+            if (visited.contains(current)) break;
+
+            chain.add(current);
+            visited.add(current);
+
+            List<String> nextIds = adjacency.get(current);
+            if (nextIds == null || nextIds.isEmpty()) break;
+
+            List<String> serviceTaskSuccessors = nextIds.stream()
+                    .filter(id -> definition.nodes().get(id) instanceof ServiceTask)
+                    .toList();
+
+            if (serviceTaskSuccessors.size() != 1) break;
+
+            current = serviceTaskSuccessors.getFirst();
+        }
+
+        return chain;
     }
 }

@@ -20,6 +20,7 @@ public class AiAssistantService {
 
     private static final int MAX_MESSAGES = 12;
     private static final int MAX_ERROR_CHARS = 400;
+    private static final String ROLE_ASSISTANT = "assistant";
     private static final Logger log = LoggerFactory.getLogger(AiAssistantService.class);
 
     private final AiProviderClient providerClient;
@@ -44,7 +45,7 @@ public class AiAssistantService {
                     conversationId,
                     properties.getModel(),
                     false,
-                    new ChatMessageDto("assistant", promptBuilder.buildUnavailableMessage(route)),
+                    new ChatMessageDto(ROLE_ASSISTANT, promptBuilder.buildUnavailableMessage(route)),
                     Map.of(),
                     null
             );
@@ -66,7 +67,7 @@ public class AiAssistantService {
                     conversationId,
                     response.model(),
                     true,
-                    new ChatMessageDto("assistant", structuredReply.reply()),
+                    new ChatMessageDto(ROLE_ASSISTANT, structuredReply.reply()),
                     response.usage() == null ? Map.of() : response.usage(),
                     structuredReply.diagramUpdate()
             );
@@ -77,7 +78,7 @@ public class AiAssistantService {
                     conversationId,
                     properties.getModel(),
                     true,
-                    new ChatMessageDto("assistant", promptBuilder.buildFailureMessage(detail)),
+                    new ChatMessageDto(ROLE_ASSISTANT, promptBuilder.buildFailureMessage(detail)),
                     Map.of("error", detail),
                     null
             );
@@ -148,7 +149,7 @@ public class AiAssistantService {
     }
 
     private static String normalizeRole(String role) {
-        return "assistant".equalsIgnoreCase(role) ? "assistant" : "user";
+        return ROLE_ASSISTANT.equalsIgnoreCase(role) ? ROLE_ASSISTANT : "user";
     }
 
     private static String summarizeProviderError(Exception error) {

@@ -25,6 +25,16 @@ public class BpmnParser {
     private static final String CAMUNDA_NS = "http://camunda.org/schema/1.0/bpmn";
     private static final String ENGINE_NS = "https://bko.dev/schema/bpmn-engine/1.0";
 
+    private static final String SEQUENCE_FLOW = "sequenceFlow";
+    private static final String MESSAGE_REF = "messageRef";
+    private static final String MESSAGE_EVENT_DEFINITION = "messageEventDefinition";
+    private static final String TIMER_EVENT_DEFINITION = "timerEventDefinition";
+    private static final String EXTENSION_ELEMENTS = "extensionElements";
+    private static final String TASK_CONFIGURATION = "taskConfiguration";
+    private static final String WORKER = "worker";
+    private static final String RESULT_VARIABLE = "resultVariable";
+    private static final String DEFAULT = "default";
+
     private final DocumentBuilder documentBuilder;
 
     public BpmnParser() {
@@ -78,7 +88,7 @@ public class BpmnParser {
             Node n = childNodes.item(i);
             if (n instanceof Element e) {
                 String local = e.getLocalName();
-                if (local != null && local.equals("sequenceFlow")) {
+                if (local != null && local.equals(SEQUENCE_FLOW)) {
                     flowElements.add(e);
                 }
             }
@@ -86,7 +96,7 @@ public class BpmnParser {
 
         // Parse sequence flows first (needed for incoming/outgoing)
         for (Element flowEl : flowElements) {
-            String flowId = requireAttr(flowEl, "id", "sequenceFlow");
+            String flowId = requireAttr(flowEl, "id", SEQUENCE_FLOW);
             String sourceRef = requireAttr(flowEl, "sourceRef", flowId);
             String targetRef = requireAttr(flowEl, "targetRef", flowId);
             ExpressionDefinition condition = getConditionExpression(flowEl);
@@ -159,7 +169,7 @@ public class BpmnParser {
                     FlowNode node = parseIntermediateThrowEvent(e, incoming, outgoing);
                     nodes.put(node.id(), node);
                 }
-                case "sequenceFlow" -> { /* already handled */ }
+                case SEQUENCE_FLOW -> { /* already handled */ }
                 default -> { /* ignore other elements */ }
             }
         }
@@ -222,14 +232,14 @@ public class BpmnParser {
         String name = getAttr(e, "name", "");
         List<String> out = outgoing.getOrDefault(id, List.of());
         StartEventTrigger trigger = StartEventTrigger.NONE;
-        String messageRef = getAttrNS(e, ENGINE_NS, "messageRef");
-        if (messageRef == null && findDirectChild(e, BPMN_NS, "messageEventDefinition") != null) {
-            Element msgDef = findDirectChild(e, BPMN_NS, "messageEventDefinition");
-            messageRef = msgDef != null ? getAttr(msgDef, "messageRef", getAttrNS(e, ENGINE_NS, "messageRef")) : getAttrNS(e, ENGINE_NS, "messageRef");
+        String messageRef = getAttrNS(e, ENGINE_NS, MESSAGE_REF);
+        if (messageRef == null && findDirectChild(e, BPMN_NS, MESSAGE_EVENT_DEFINITION) != null) {
+            Element msgDef = findDirectChild(e, BPMN_NS, MESSAGE_EVENT_DEFINITION);
+            messageRef = msgDef != null ? getAttr(msgDef, MESSAGE_REF, getAttrNS(e, ENGINE_NS, MESSAGE_REF)) : getAttrNS(e, ENGINE_NS, MESSAGE_REF);
         }
         String timerDefinition = getAttrNS(e, ENGINE_NS, "timerDefinition");
         if (timerDefinition == null) {
-            Element timerDef = findDirectChild(e, BPMN_NS, "timerEventDefinition");
+            Element timerDef = findDirectChild(e, BPMN_NS, TIMER_EVENT_DEFINITION);
             if (timerDef != null) {
                 Element timeCycle = findDirectChild(timerDef, BPMN_NS, "timeCycle");
                 Element timeDuration = findDirectChild(timerDef, BPMN_NS, "timeDuration");
@@ -249,10 +259,10 @@ public class BpmnParser {
         String name = getAttr(e, "name", "");
         List<String> in = incoming.getOrDefault(id, List.of());
         EndEventType endType = EndEventType.NONE;
-        String messageRef = getAttrNS(e, ENGINE_NS, "messageRef");
-        if (messageRef == null && findDirectChild(e, BPMN_NS, "messageEventDefinition") != null) {
-            Element msgDef = findDirectChild(e, BPMN_NS, "messageEventDefinition");
-            if (msgDef != null) messageRef = getAttr(msgDef, "messageRef", null);
+        String messageRef = getAttrNS(e, ENGINE_NS, MESSAGE_REF);
+        if (messageRef == null && findDirectChild(e, BPMN_NS, MESSAGE_EVENT_DEFINITION) != null) {
+            Element msgDef = findDirectChild(e, BPMN_NS, MESSAGE_EVENT_DEFINITION);
+            if (msgDef != null) messageRef = getAttr(msgDef, MESSAGE_REF, null);
         }
         String errorCode = getAttrNS(e, ENGINE_NS, "errorCode");
         if (errorCode == null && findDirectChild(e, BPMN_NS, "errorEventDefinition") != null) {
@@ -275,8 +285,8 @@ public class BpmnParser {
             if (msgDef != null) messageRef = getAttr(msgDef, "messageRef", null);
         }
         String timerDefinition = getAttrNS(e, ENGINE_NS, "timerDefinition");
-        if (timerDefinition == null && findDirectChild(e, BPMN_NS, "timerEventDefinition") != null) {
-            Element timerDef = findDirectChild(e, BPMN_NS, "timerEventDefinition");
+        if (timerDefinition == null && findDirectChild(e, BPMN_NS, TIMER_EVENT_DEFINITION) != null) {
+            Element timerDef = findDirectChild(e, BPMN_NS, TIMER_EVENT_DEFINITION);
             if (timerDef != null) {
                 Element timeDuration = findDirectChild(timerDef, BPMN_NS, "timeDuration");
                 if (timeDuration != null && timeDuration.getTextContent() != null) timerDefinition = timeDuration.getTextContent().trim();
@@ -291,10 +301,10 @@ public class BpmnParser {
         String name = getAttr(e, "name", "");
         List<String> in = incoming.getOrDefault(id, List.of());
         List<String> out = outgoing.getOrDefault(id, List.of());
-        String messageRef = getAttrNS(e, ENGINE_NS, "messageRef");
-        if (messageRef == null && findDirectChild(e, BPMN_NS, "messageEventDefinition") != null) {
-            Element msgDef = findDirectChild(e, BPMN_NS, "messageEventDefinition");
-            if (msgDef != null) messageRef = getAttr(msgDef, "messageRef", null);
+        String messageRef = getAttrNS(e, ENGINE_NS, MESSAGE_REF);
+        if (messageRef == null && findDirectChild(e, BPMN_NS, MESSAGE_EVENT_DEFINITION) != null) {
+            Element msgDef = findDirectChild(e, BPMN_NS, MESSAGE_EVENT_DEFINITION);
+            if (msgDef != null) messageRef = getAttr(msgDef, MESSAGE_REF, null);
         }
         String signalRef = getAttrNS(e, ENGINE_NS, "signalRef");
         if (signalRef == null && findDirectChild(e, BPMN_NS, "signalEventDefinition") != null) {
@@ -326,17 +336,17 @@ public class BpmnParser {
     }
 
     private KafkaTaskConfiguration parseKafkaTaskConfiguration(Element serviceTaskEl) {
-        Element extensionElements = findDirectChild(serviceTaskEl, BPMN_NS, "extensionElements");
+        Element extensionElements = findDirectChild(serviceTaskEl, BPMN_NS, EXTENSION_ELEMENTS);
         if (extensionElements == null) {
             return null;
         }
 
-        Element taskConfiguration = findDirectChild(extensionElements, ENGINE_NS, "taskConfiguration");
+        Element taskConfiguration = findDirectChild(extensionElements, ENGINE_NS, TASK_CONFIGURATION);
         if (taskConfiguration == null) {
             return null;
         }
 
-        String type = getAttr(taskConfiguration, "type", "worker");
+        String type = getAttr(taskConfiguration, "type", WORKER);
         if (!"kafka".equalsIgnoreCase(type)) {
             return null;
         }
@@ -345,22 +355,22 @@ public class BpmnParser {
                 getAttr(taskConfiguration, "topic", ""),
                 getAttr(taskConfiguration, "messageMapping", ""),
                 getAttr(taskConfiguration, "keyMapping", ""),
-                getAttr(taskConfiguration, "resultVariable", "")
+                getAttr(taskConfiguration, RESULT_VARIABLE, "")
         );
     }
 
     private RestTaskConfiguration parseRestTaskConfiguration(Element serviceTaskEl) {
-        Element extensionElements = findDirectChild(serviceTaskEl, BPMN_NS, "extensionElements");
+        Element extensionElements = findDirectChild(serviceTaskEl, BPMN_NS, EXTENSION_ELEMENTS);
         if (extensionElements == null) {
             return null;
         }
 
-        Element taskConfiguration = findDirectChild(extensionElements, ENGINE_NS, "taskConfiguration");
+        Element taskConfiguration = findDirectChild(extensionElements, ENGINE_NS, TASK_CONFIGURATION);
         if (taskConfiguration == null) {
             return null;
         }
 
-        String type = getAttr(taskConfiguration, "type", "worker");
+        String type = getAttr(taskConfiguration, "type", WORKER);
         if (!"rest".equalsIgnoreCase(type)) {
             return null;
         }
@@ -378,23 +388,23 @@ public class BpmnParser {
                 getAttr(taskConfiguration, "headers", ""),
                 getAttr(taskConfiguration, "queryParameters", ""),
                 getAttr(taskConfiguration, "body", ""),
-                getAttr(taskConfiguration, "resultVariable", ""),
+                getAttr(taskConfiguration, RESULT_VARIABLE, ""),
                 parseInteger(getAttr(taskConfiguration, "timeoutSeconds", "20"), 20)
         );
     }
 
     private BeanTaskConfiguration parseBeanTaskConfiguration(Element serviceTaskEl) {
-        Element extensionElements = findDirectChild(serviceTaskEl, BPMN_NS, "extensionElements");
+        Element extensionElements = findDirectChild(serviceTaskEl, BPMN_NS, EXTENSION_ELEMENTS);
         if (extensionElements == null) {
             return null;
         }
 
-        Element taskConfiguration = findDirectChild(extensionElements, ENGINE_NS, "taskConfiguration");
+        Element taskConfiguration = findDirectChild(extensionElements, ENGINE_NS, TASK_CONFIGURATION);
         if (taskConfiguration == null) {
             return null;
         }
 
-        String type = getAttr(taskConfiguration, "type", "worker");
+        String type = getAttr(taskConfiguration, "type", WORKER);
         if (!"bean".equalsIgnoreCase(type)) {
             return null;
         }
@@ -402,7 +412,7 @@ public class BpmnParser {
         return new BeanTaskConfiguration(
                 getAttr(taskConfiguration, "beanName", ""),
                 getAttr(taskConfiguration, "inputMapping", ""),
-                getAttr(taskConfiguration, "resultVariable", "")
+                getAttr(taskConfiguration, RESULT_VARIABLE, "")
         );
     }
 
@@ -446,7 +456,7 @@ public class BpmnParser {
     private FlowNode parseExclusiveGateway(Element e, Map<String, List<String>> incoming, Map<String, List<String>> outgoing) throws BpmnParseException {
         String id = requireAttr(e, "id", "exclusiveGateway");
         String name = getAttr(e, "name", "");
-        String defaultFlow = getAttr(e, "default", null);
+        String defaultFlow = getAttr(e, DEFAULT, null);
         if (defaultFlow != null && defaultFlow.isBlank()) defaultFlow = null;
         List<String> in = incoming.getOrDefault(id, List.of());
         List<String> out = outgoing.getOrDefault(id, List.of());
@@ -464,7 +474,7 @@ public class BpmnParser {
     private FlowNode parseInclusiveGateway(Element e, Map<String, List<String>> incoming, Map<String, List<String>> outgoing) throws BpmnParseException {
         String id = requireAttr(e, "id", "inclusiveGateway");
         String name = getAttr(e, "name", "");
-        String defaultFlow = getAttr(e, "default", null);
+        String defaultFlow = getAttr(e, DEFAULT, null);
         if (defaultFlow != null && defaultFlow.isBlank()) defaultFlow = null;
         List<String> in = incoming.getOrDefault(id, List.of());
         List<String> out = outgoing.getOrDefault(id, List.of());
@@ -474,7 +484,7 @@ public class BpmnParser {
     private FlowNode parseComplexGateway(Element e, Map<String, List<String>> incoming, Map<String, List<String>> outgoing) throws BpmnParseException {
         String id = requireAttr(e, "id", "complexGateway");
         String name = getAttr(e, "name", "");
-        String defaultFlow = getAttr(e, "default", null);
+        String defaultFlow = getAttr(e, DEFAULT, null);
         if (defaultFlow != null && defaultFlow.isBlank()) defaultFlow = null;
         String activationExpression = getAttrNS(e, ENGINE_NS, "activationExpression");
         if (activationExpression == null || activationExpression.isBlank()) {
@@ -492,7 +502,7 @@ public class BpmnParser {
     private FlowNode parseEventBasedGateway(Element e, Map<String, List<String>> incoming, Map<String, List<String>> outgoing) throws BpmnParseException {
         String id = requireAttr(e, "id", "eventBasedGateway");
         String name = getAttr(e, "name", "");
-        String defaultFlow = getAttr(e, "default", null);
+        String defaultFlow = getAttr(e, DEFAULT, null);
         if (defaultFlow != null && defaultFlow.isBlank()) defaultFlow = null;
         List<String> in = incoming.getOrDefault(id, List.of());
         List<String> out = outgoing.getOrDefault(id, List.of());
@@ -819,7 +829,7 @@ public class BpmnParser {
         appendAttribute(sb, "headers", configuration.headers());
         appendAttribute(sb, "queryParameters", configuration.queryParameters());
         appendAttribute(sb, "body", configuration.body());
-        appendAttribute(sb, "resultVariable", configuration.resultVariable());
+        appendAttribute(sb, RESULT_VARIABLE, configuration.resultVariable());
         if (configuration.timeoutSeconds() != null) {
             appendAttribute(sb, "timeoutSeconds", String.valueOf(configuration.timeoutSeconds()));
         }
@@ -832,7 +842,7 @@ public class BpmnParser {
         sb.append("        <engine:taskConfiguration type=\"bean\"");
         appendAttribute(sb, "beanName", configuration.beanName());
         appendAttribute(sb, "inputMapping", configuration.inputMapping());
-        appendAttribute(sb, "resultVariable", configuration.resultVariable());
+        appendAttribute(sb, RESULT_VARIABLE, configuration.resultVariable());
         sb.append("/>\n");
         sb.append("      </bpmn:extensionElements>\n");
     }
@@ -843,7 +853,7 @@ public class BpmnParser {
         appendAttribute(sb, "topic", configuration.topic());
         appendAttribute(sb, "messageMapping", configuration.messageMapping());
         appendAttribute(sb, "keyMapping", configuration.keyMapping());
-        appendAttribute(sb, "resultVariable", configuration.resultVariable());
+        appendAttribute(sb, RESULT_VARIABLE, configuration.resultVariable());
         sb.append("/>\n");
         sb.append("      </bpmn:extensionElements>\n");
     }

@@ -10,6 +10,8 @@ import java.util.Map;
 @Configuration
 public class BpmnEngineConfig {
 
+    private static final String VAR_COUNTER = "counter";
+
     @Bean
     public TaskWorker defaultJavaWorker() {
         return vars -> Map.of();
@@ -19,8 +21,8 @@ public class BpmnEngineConfig {
     @Bean
     public TaskWorker counterWorker() {
         return vars -> {
-            int count = ((Number) vars.getOrDefault("counter", 0)).intValue();
-            return Map.of("counter", count + 1);
+            int count = ((Number) vars.getOrDefault(VAR_COUNTER, 0)).intValue();
+            return Map.of(VAR_COUNTER, count + 1);
         };
     }
 
@@ -40,16 +42,25 @@ public class BpmnEngineConfig {
         return vars -> Map.of("matched", true);
     }
 
+    /** Throws RuntimeException. Used for testing failure and restart flows. */
+    @Bean
+    public TaskWorker failWorker() {
+        return vars -> { throw new RuntimeException("Simulated failure"); };
+    }
+
     @Bean
     public WorkerRegistrar workerRegistrar(ProcessEngine engine, TaskWorker defaultJavaWorker, TaskWorker counterWorker,
-                                           TaskWorker validateInvoiceWorker, TaskWorker matchInvoiceWorker) {
+                                           TaskWorker validateInvoiceWorker, TaskWorker matchInvoiceWorker,
+                                           TaskWorker failWorker) {
         engine.registerWorker("java", defaultJavaWorker);
-        engine.registerWorker("counter", counterWorker);
+        engine.registerWorker(VAR_COUNTER, counterWorker);
         engine.registerWorker("validate-invoice", validateInvoiceWorker);
         engine.registerWorker("match-invoice", matchInvoiceWorker);
+        engine.registerWorker("fail", failWorker);
         return new WorkerRegistrar();
     }
 
+    /** Marker for worker registration; no methods needed. */
     public record WorkerRegistrar() {
     }
 }

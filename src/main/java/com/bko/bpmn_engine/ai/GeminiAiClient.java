@@ -20,6 +20,8 @@ import java.util.Map;
 @Component
 public class GeminiAiClient implements AiProviderClient {
 
+    private static final String PARTS_KEY = "parts";
+
     private final GeminiProperties properties;
     private final ObjectMapper objectMapper;
     private final HttpClient httpClient;
@@ -36,7 +38,7 @@ public class GeminiAiClient implements AiProviderClient {
     public AiProviderResponse generate(AiProviderRequest request) throws Exception {
         Map<String, Object> payload = new LinkedHashMap<>();
         payload.put("system_instruction", Map.of(
-                "parts", List.of(Map.of("text", request.systemInstruction()))
+                PARTS_KEY, List.of(Map.of("text", request.systemInstruction()))
         ));
         payload.put("contents", buildContents(request.messages()));
 
@@ -53,7 +55,7 @@ public class GeminiAiClient implements AiProviderClient {
         }
 
         JsonNode root = objectMapper.readTree(response.body());
-        JsonNode parts = root.path("candidates").path(0).path("content").path("parts");
+        JsonNode parts = root.path("candidates").path(0).path("content").path(PARTS_KEY);
         if (!parts.isArray() || parts.isEmpty()) {
             throw new IllegalStateException("Gemini returned no content");
         }
@@ -97,7 +99,7 @@ public class GeminiAiClient implements AiProviderClient {
             String role = "assistant".equalsIgnoreCase(message.role()) ? "model" : "user";
             contents.add(Map.of(
                     "role", role,
-                    "parts", List.of(Map.of("text", message.content()))
+                    PARTS_KEY, List.of(Map.of("text", message.content()))
             ));
         }
         return contents;

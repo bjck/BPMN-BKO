@@ -50,6 +50,7 @@ public class ProcessInstanceEntity {
     protected ProcessInstanceEntity() {
     }
 
+    @SuppressWarnings("java:S107")
     public ProcessInstanceEntity(UUID instanceId, String processDefinitionId, String state,
                                  String currentNodeId, String errorMessage, String variablesJson,
                                  String parallelJoinTokensJson, Instant createdAt, Instant completedAt) {

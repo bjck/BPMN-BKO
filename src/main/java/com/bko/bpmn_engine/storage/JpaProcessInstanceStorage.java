@@ -10,6 +10,7 @@ import com.bko.bpmn_engine.storage.repository.ProcessInstanceEventRepository;
 import com.bko.bpmn_engine.storage.repository.ProcessInstanceHistoryRepository;
 import com.bko.bpmn_engine.storage.repository.ProcessInstanceRepository;
 import com.bko.bpmn_engine.storage.repository.TaskExecutionRepository;
+import org.springframework.context.annotation.Lazy;
 import org.springframework.context.annotation.Profile;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.stereotype.Component;
@@ -20,7 +21,6 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
-import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.atomic.AtomicInteger;
 
 /**
@@ -37,15 +37,18 @@ public class JpaProcessInstanceStorage implements ProcessInstanceStorage {
     private final ProcessInstanceHistoryRepository historyRepository;
     private final ProcessInstanceEventRepository eventRepository;
     private final TaskExecutionRepository taskExecutionRepository;
+    private final JpaProcessInstanceStorage self;
 
     public JpaProcessInstanceStorage(ProcessInstanceRepository instanceRepository,
                                     ProcessInstanceHistoryRepository historyRepository,
                                     ProcessInstanceEventRepository eventRepository,
-                                    TaskExecutionRepository taskExecutionRepository) {
+                                    TaskExecutionRepository taskExecutionRepository,
+                                    @Lazy JpaProcessInstanceStorage self) {
         this.instanceRepository = instanceRepository;
         this.historyRepository = historyRepository;
         this.eventRepository = eventRepository;
         this.taskExecutionRepository = taskExecutionRepository;
+        this.self = self;
     }
 
     @Override
@@ -150,13 +153,13 @@ public class JpaProcessInstanceStorage implements ProcessInstanceStorage {
     @Override
     @Transactional(readOnly = true)
     public List<RecoveredInstance> findAll() {
-        return findAllPage(1, DEFAULT_PAGE_SIZE).instances();
+        return self.findAllPage(1, DEFAULT_PAGE_SIZE).instances();
     }
 
     @Override
     @Transactional(readOnly = true)
     public InstancePage findAllPage(int page, int size) {
-        int safeSize = Math.min(Math.max(1, size), MAX_PAGE_SIZE);
+        int safeSize = Math.clamp(size, 1, MAX_PAGE_SIZE);
         int safePage = Math.max(1, page);
 
         List<ProcessInstanceEntity> activeEntities = instanceRepository.findByStateIn(

@@ -146,17 +146,4 @@ class DisasterRecoveryIntegrationTest {
         assertThat(afterResume.variables()).containsEntry("counter", 12);
     }
 
-    private void awaitDbState(UUID instanceId, String expectedNodeId, int expectedCounter) throws InterruptedException {
-        for (int i = 0; i < 100; i++) {
-            ProcessInstanceStorage.RecoveredInstance r = instanceStorage.findById(instanceId);
-            if (r != null && expectedNodeId.equals(r.currentNodeId())) {
-                Object counter = r.variables().get("counter");
-                if (counter != null && ((Number) counter).intValue() == expectedCounter) {
-                    return;
-                }
-            }
-            Thread.sleep(100);
-        }
-        throw new AssertionError("DB did not reach expected state: currentNodeId=" + expectedNodeId + ", counter=" + expectedCounter);
-    }
 }

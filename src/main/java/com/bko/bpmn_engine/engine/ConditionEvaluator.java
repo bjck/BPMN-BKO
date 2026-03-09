@@ -56,14 +56,11 @@ final class ConditionEvaluator {
 
         try {
             Object result = resolveValue(condition, language, variables);
-            boolean outcome;
-            if (result instanceof Boolean booleanValue) {
-                outcome = booleanValue;
-            } else if (result instanceof String stringValue) {
-                outcome = Boolean.parseBoolean(stringValue);
-            } else {
-                outcome = false;
-            }
+            boolean outcome = switch (result) {
+                case Boolean b -> b;
+                case String s -> Boolean.parseBoolean(s);
+                default -> false;
+            };
             log.trace("Condition evaluated condition={} language={} result={} outcome={}", condition, language, result, outcome);
             return outcome;
         } catch (Exception e) {

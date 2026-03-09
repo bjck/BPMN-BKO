@@ -13,18 +13,20 @@ import java.util.Map;
 @RestControllerAdvice
 public class ApiExceptionHandler {
 
+    private static final String MESSAGE_KEY = "message";
+
     @ExceptionHandler(BpmnParseException.class)
     public ResponseEntity<Map<String, String>> handleBpmnParseException(BpmnParseException ex) {
-        return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(Map.of("message", ex.getMessage()));
+        return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(Map.of(MESSAGE_KEY, ex.getMessage()));
     }
 
     @ExceptionHandler(ProcessNotFoundException.class)
     public ResponseEntity<Map<String, String>> handleProcessNotFoundException(ProcessNotFoundException ex) {
-        return ResponseEntity.status(HttpStatus.NOT_FOUND).body(Map.of("message", ex.getMessage()));
+        return ResponseEntity.status(HttpStatus.NOT_FOUND).body(Map.of(MESSAGE_KEY, ex.getMessage()));
     }
 
     @ExceptionHandler(IllegalStateTransitionException.class)
     public ResponseEntity<Map<String, String>> handleIllegalStateTransitionException(IllegalStateTransitionException ex) {
-        return ResponseEntity.status(HttpStatus.CONFLICT).body(Map.of("message", ex.getMessage()));
+        return ResponseEntity.status(HttpStatus.CONFLICT).body(Map.of(MESSAGE_KEY, ex.getMessage()));
     }
 }

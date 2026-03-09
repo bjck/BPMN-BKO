@@ -35,6 +35,8 @@ build/
 
 ### VS Code ###
 .vscode/
+!.vscode/extensions.json
+!.vscode/settings.json
 
 ### Node / Playwright ###
 node_modules/

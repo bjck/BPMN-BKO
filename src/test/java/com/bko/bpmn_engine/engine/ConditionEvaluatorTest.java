@@ -33,4 +33,33 @@ class ConditionEvaluatorTest {
         Map<String, Object> resolved = ConditionEvaluator.resolveMap("= { Authorization: \"Bearer \" + token }", Map.of("token", "abc"));
         assertEquals("Bearer abc", resolved.get("Authorization"));
     }
+
+    @Test
+    void evaluate_nullOrBlank_returnsFalse() {
+        assertFalse(ConditionEvaluator.evaluate(null, Map.of()));
+        assertFalse(ConditionEvaluator.evaluate("", Map.of()));
+        assertFalse(ConditionEvaluator.evaluate("   ", Map.of()));
+    }
+
+    @Test
+    void evaluate_withLanguageFeel_usesFeelEngine() {
+        assertTrue(ConditionEvaluator.evaluate("= x > 5", "feel", Map.of("x", 10)));
+        assertFalse(ConditionEvaluator.evaluate("= x > 5", "feel", Map.of("x", 2)));
+    }
+
+    @Test
+    void evaluate_withLanguageSpel_usesSpel() {
+        assertTrue(ConditionEvaluator.evaluate("${flag}", "spel", Map.of("flag", true)));
+    }
+
+    @Test
+    void resolveValue_stringResult_parsedAsBoolean() {
+        assertTrue(ConditionEvaluator.evaluate("= \"true\"", "feel", Map.of()));
+    }
+
+    @Test
+    void resolveMap_withSpelLanguage_parsesJsonString() {
+        Map<String, Object> resolved = ConditionEvaluator.resolveMap("{\"a\":1}", Map.of());
+        assertEquals(1, resolved.get("a"));
+    }
 }

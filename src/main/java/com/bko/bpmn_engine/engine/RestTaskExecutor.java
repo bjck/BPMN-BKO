@@ -42,9 +42,35 @@ final class RestTaskExecutor {
 
         Map<String, Object> queryParameters = new LinkedHashMap<>(ConditionEvaluator.resolveMap(configuration.queryParameters(), variables));
         Map<String, Object> headers = new LinkedHashMap<>(ConditionEvaluator.resolveMap(configuration.headers(), variables));
-
         applyAuthentication(configuration, variables, headers, queryParameters);
 
+        HttpRequest request = buildRequest(method, url, queryParameters, headers, configuration, variables);
+
+        try {
+            HttpResponse<String> response = httpClient.send(request, HttpResponse.BodyHandlers.ofString());
+            log.trace("REST task response taskId={} status={}", task.id(), response.statusCode());
+            Map<String, Object> responsePayload = Map.of(
+                    "status", response.statusCode(),
+                    "headers", flattenHeaders(response.headers().map()),
+                    "body", parseResponseBody(response.body())
+            );
+
+            if (response.statusCode() >= 400) {
+                throw new IllegalStateException("REST task failed with status " + response.statusCode() + ": " + responsePayload.get("body"));
+            }
+
+            return responsePayload;
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            throw new IllegalStateException("REST task interrupted for task " + task.id(), e);
+        } catch (Exception e) {
+            throw new IllegalStateException("REST task failed for task " + task.id() + ": " + e.getMessage(), e);
+        }
+    }
+
+    private HttpRequest buildRequest(String method, String url,
+                                    Map<String, Object> queryParameters, Map<String, Object> headers,
+                                    RestTaskConfiguration configuration, Map<String, Object> variables) {
         HttpRequest.Builder requestBuilder = HttpRequest.newBuilder(buildUri(url, queryParameters));
         Integer timeoutSeconds = configuration.timeoutSeconds();
         if (timeoutSeconds != null && timeoutSeconds > 0) {
@@ -68,24 +94,7 @@ final class RestTaskExecutor {
                 requestBuilder.header(key, String.valueOf(value));
             }
         });
-
-        try {
-            HttpResponse<String> response = httpClient.send(requestBuilder.build(), HttpResponse.BodyHandlers.ofString());
-            log.trace("REST task response taskId={} status={}", task.id(), response.statusCode());
-            Map<String, Object> responsePayload = Map.of(
-                    "status", response.statusCode(),
-                    "headers", flattenHeaders(response.headers().map()),
-                    "body", parseResponseBody(response.body())
-            );
-
-            if (response.statusCode() >= 400) {
-                throw new IllegalStateException("REST task failed with status " + response.statusCode() + ": " + responsePayload.get("body"));
-            }
-
-            return responsePayload;
-        } catch (Exception e) {
-            throw new IllegalStateException("REST task failed for task " + task.id() + ": " + e.getMessage(), e);
-        }
+        return requestBuilder.build();
     }
 
     private void applyAuthentication(
@@ -96,8 +105,7 @@ final class RestTaskExecutor {
     ) {
         String authenticationType = defaultString(configuration.authenticationType(), "none").trim().toLowerCase();
         switch (authenticationType) {
-            case "none" -> {
-            }
+            case "none" -> { /* No authentication */ }
             case "bearer" -> {
                 String token = ConditionEvaluator.resolveString(configuration.bearerToken(), variables);
                 if (token != null && !token.isBlank()) {
@@ -169,7 +177,7 @@ final class RestTaskExecutor {
     private void ensureContentType(Map<String, Object> headers, String defaultContentType) {
         boolean hasContentType = headers.keySet().stream()
                 .filter(java.util.Objects::nonNull)
-                .anyMatch(key -> "content-type".equalsIgnoreCase(key));
+                .anyMatch("content-type"::equalsIgnoreCase);
         if (!hasContentType) {
             headers.put("Content-Type", defaultContentType);
         }

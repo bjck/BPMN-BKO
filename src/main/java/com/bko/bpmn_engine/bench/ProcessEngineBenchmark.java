@@ -22,6 +22,8 @@ import java.util.concurrent.TimeUnit;
 @Fork(value = 1, jvmArgsAppend = {"-XX:+UseZGC", "-XX:MaxGCPauseMillis=1"})
 public class ProcessEngineBenchmark {
 
+    private static final String VAR_COUNTER = "counter";
+
     private ProcessEngine engine;
     private String benchmarkProcessId;
 
@@ -35,8 +37,8 @@ public class ProcessEngineBenchmark {
         benchmarkProcessId = engine.deployProcess(bpmnXml);
 
         TaskWorker counterWorker = vars -> {
-            int count = ((Number) vars.getOrDefault("counter", 0)).intValue();
-            return Map.of("counter", count + 1);
+            int count = ((Number) vars.getOrDefault(VAR_COUNTER, 0)).intValue();
+            return Map.of(VAR_COUNTER, count + 1);
         };
         engine.registerWorker("java", counterWorker);
     }
@@ -46,9 +48,7 @@ public class ProcessEngineBenchmark {
     @OutputTimeUnit(TimeUnit.SECONDS)
     @Threads(1)
     public ProcessInstance singleThreaded100Instances() {
-        Map<String, Object> vars = new HashMap<>();
-        vars.put("counter", 0);
-        return engine.createInstance(benchmarkProcessId, vars);
+        return createInstance();
     }
 
     @Benchmark
@@ -56,8 +56,12 @@ public class ProcessEngineBenchmark {
     @OutputTimeUnit(TimeUnit.SECONDS)
     @Threads(8)
     public ProcessInstance multiThreaded() {
+        return createInstance();
+    }
+
+    private ProcessInstance createInstance() {
         Map<String, Object> vars = new HashMap<>();
-        vars.put("counter", 0);
+        vars.put(VAR_COUNTER, 0);
         return engine.createInstance(benchmarkProcessId, vars);
     }
 

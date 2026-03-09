@@ -65,6 +65,13 @@ npm run test:e2e:spa
 
 # JMH benchmarks
 mvn package -DskipTests && java -jar target/jmh-benchmarks-jmh.jar
+
+# Code coverage (JaCoCo)
+mvn clean test
+# Report: target/site/jacoco/index.html
+
+# SonarQube analysis (start SonarQube first: docker compose up -d)
+# SONAR_TOKEN in .env; load it then run: mvn clean verify sonar:sonar (scanner uses SONAR_TOKEN env var)
 ```
 
 ## Profiles
@@ -72,5 +79,11 @@ mvn package -DskipTests && java -jar target/jmh-benchmarks-jmh.jar
 - **Default:** In-memory only; no DB required.
 - **`persistence`:** Enables JPA and PostgreSQL (see `application-persistence.yaml` and README for Docker/DB setup).
 - **`trace`:** Enables TRACE logging for engine, tasks, and Kafka (see `application-trace.yaml`). Use when debugging execution flow.
+
+## Code coverage and quality
+
+- **JaCoCo:** Run `mvn clean test`; coverage report at `target/site/jacoco/index.html`. JMH sources excluded.
+- **SonarQube:** Run locally via `docker compose up -d` (port 9001). Then `mvn clean verify sonar:sonar`. SONAR_TOKEN in `.env` is used by the scanner. Create project and token in SonarQube UI at http://localhost:9001 (default login: admin/admin).
+- **SonarLint (VS Code/Cursor):** Extension `SonarSource.sonarlint-vscode` is recommended. Workspace is preconfigured to connect to `http://localhost:9001` and bind to project `bpmn-engine`. After installing, add your token: SonarLint view → Edit connection "local-sonar" → paste token from `.env` (SONAR_TOKEN). Start SonarQube before using connected mode.
 
 When suggesting config or code changes, preserve the above conventions and keep the hot path free of blocking I/O and `@Async`.

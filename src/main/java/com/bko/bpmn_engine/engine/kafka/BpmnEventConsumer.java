@@ -1,7 +1,6 @@
 package com.bko.bpmn_engine.engine.kafka;
 
 import com.bko.bpmn_engine.engine.ProcessEngine;
-import com.bko.bpmn_engine.model.ProcessInstance;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
@@ -42,43 +41,51 @@ public class BpmnEventConsumer {
                 key, payload.messageRef(), payload.signalRef(), payload.instanceId(), payload.nodeId(),
                 payload.processDefinitionId(), payload.correlationKey());
 
-        // Message start: messageRef set and no instanceId (or processDefinitionId set)
-        if (payload.instanceId() == null && (payload.messageRef() != null || payload.processDefinitionId() != null)) {
-            String processDefinitionId = payload.processDefinitionId();
-            String messageRef = payload.messageRef();
-            if (processDefinitionId == null && messageRef != null) {
-                var defIds = processEngine.getProcessDefinitionIdsByMessageRef(messageRef);
-                if (!defIds.isEmpty()) processDefinitionId = defIds.getFirst();
-            }
-            if (processDefinitionId != null) {
-                log.trace("BPMN event triggering message start processDefinitionId={} messageRef={} correlationKey={}", processDefinitionId, messageRef, payload.correlationKey());
-                processEngine.triggerMessageStart(
-                        processDefinitionId,
-                        messageRef != null ? messageRef : "",
-                        payload.correlationKey(),
-                        payload.variables() != null ? payload.variables() : Map.of());
-            }
-            return;
-        }
+        if (handleMessageStart(payload)) return;
+        if (handleCatchEvent(payload)) return;
+        handleCatchByMessageRef(payload);
+    }
 
-        // Catch event: instanceId and nodeId set (correlate to waiting instance)
-        if (payload.instanceId() != null && payload.nodeId() != null) {
-            log.trace("BPMN event triggering catch event instanceId={} nodeId={}", payload.instanceId(), payload.nodeId());
-            processEngine.triggerCatchEvent(
-                    payload.instanceId(),
-                    payload.nodeId(),
-                    payload.variables() != null ? payload.variables() : Map.of());
-            return;
+    private boolean handleMessageStart(BpmnEventPayload payload) {
+        if (payload.instanceId() != null || (payload.messageRef() == null && payload.processDefinitionId() == null)) {
+            return false;
         }
-
-        // Correlation by messageRef + correlationKey to find waiting instance
-        if (payload.messageRef() != null || payload.signalRef() != null) {
-            String ref = payload.messageRef() != null ? payload.messageRef() : payload.signalRef();
-            log.trace("BPMN event triggering catch by messageRef ref={} correlationKey={}", ref, payload.correlationKey());
-            processEngine.triggerCatchEventByMessageRef(
-                    ref,
+        String processDefinitionId = payload.processDefinitionId();
+        String messageRef = payload.messageRef();
+        if (processDefinitionId == null && messageRef != null) {
+            var defIds = processEngine.getProcessDefinitionIdsByMessageRef(messageRef);
+            if (!defIds.isEmpty()) processDefinitionId = defIds.getFirst();
+        }
+        if (processDefinitionId != null) {
+            log.trace("BPMN event triggering message start processDefinitionId={} messageRef={} correlationKey={}", processDefinitionId, messageRef, payload.correlationKey());
+            processEngine.triggerMessageStart(
+                    processDefinitionId,
+                    messageRef != null ? messageRef : "",
                     payload.correlationKey(),
                     payload.variables() != null ? payload.variables() : Map.of());
         }
+        return true;
+    }
+
+    private boolean handleCatchEvent(BpmnEventPayload payload) {
+        if (payload.instanceId() == null || payload.nodeId() == null) {
+            return false;
+        }
+        log.trace("BPMN event triggering catch event instanceId={} nodeId={}", payload.instanceId(), payload.nodeId());
+        processEngine.triggerCatchEvent(
+                payload.instanceId(),
+                payload.nodeId(),
+                payload.variables() != null ? payload.variables() : Map.of());
+        return true;
+    }
+
+    private void handleCatchByMessageRef(BpmnEventPayload payload) {
+        if (payload.messageRef() == null && payload.signalRef() == null) return;
+        String ref = payload.messageRef() != null ? payload.messageRef() : payload.signalRef();
+        log.trace("BPMN event triggering catch by messageRef ref={} correlationKey={}", ref, payload.correlationKey());
+        processEngine.triggerCatchEventByMessageRef(
+                ref,
+                payload.correlationKey(),
+                payload.variables() != null ? payload.variables() : Map.of());
     }
 }

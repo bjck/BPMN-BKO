@@ -99,6 +99,63 @@ class AiAssistantServiceTest {
     }
 
     @Test
+    void chat_usesDiagramSummaryWhenReplyBlank() {
+        AiAssistantService service = new AiAssistantService(
+                request -> new AiProviderResponse("gemini-test", """
+                        {
+                          "reply": "",
+                          "diagramUpdate": {
+                            "mode": "append",
+                            "anchorElementId": "Task_1",
+                            "summary": "Added approval step",
+                            "bpmnXml": "<bpmn:definitions/>"
+                          }
+                        }
+                        """, Map.of()),
+                new AiPromptBuilder(new ObjectMapper()),
+                configuredProperties()
+        );
+
+        AiChatResponse response = service.chat(new AiChatRequest(
+                "conv-1",
+                "editor",
+                Map.of("selectedElement", Map.of("id", "Task_1")),
+                List.of(new ChatMessageDto("user", "Add approval"))
+        ));
+
+        assertEquals("Added approval step", response.reply().content());
+        assertNotNull(response.diagramUpdate());
+    }
+
+    @Test
+    void chat_returnsDoneWhenReplyAndSummaryBlank() {
+        AiAssistantService service = new AiAssistantService(
+                request -> new AiProviderResponse("gemini-test", """
+                        {
+                          "reply": "",
+                          "diagramUpdate": {
+                            "mode": "append",
+                            "anchorElementId": "",
+                            "summary": "",
+                            "bpmnXml": "<bpmn:definitions/>"
+                          }
+                        }
+                        """, Map.of()),
+                new AiPromptBuilder(new ObjectMapper()),
+                configuredProperties()
+        );
+
+        AiChatResponse response = service.chat(new AiChatRequest(
+                "conv-1",
+                "editor",
+                Map.of(),
+                List.of(new ChatMessageDto("user", "Do something"))
+        ));
+
+        assertEquals("Done.", response.reply().content());
+    }
+
+    @Test
     void chat_returnsSetupHintWhenApiKeyMissing() {
         GeminiProperties properties = new GeminiProperties();
         properties.setTimeout(Duration.ofSeconds(5));
